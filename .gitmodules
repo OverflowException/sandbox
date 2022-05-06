@@ -1,0 +1,6 @@
+[submodule "3rdparty/bgfx.cmake"]
+	path = 3rdparty/bgfx.cmake
+	url = https://github.com/widberg/bgfx.cmake
+[submodule "3rdparty/imgui"]
+	path = 3rdparty/imgui
+	url = https://github.com/ocornut/imgui
