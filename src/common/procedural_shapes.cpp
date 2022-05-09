@@ -201,6 +201,58 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
     }
 }
 
+void ProceduralShapes::gen_cube(std::vector<float>& vb,
+                                VertexAttrib attrib,
+                                glm::vec3 half_dim,
+                                IndexType i_type) {
+    
+    // TODO: This is a counter-clock wise cube
+    vb = {
+    	// positions          
+    	-1.0f,  1.0f, -1.0f,
+    	-1.0f, -1.0f, -1.0f,
+    	 1.0f, -1.0f, -1.0f,
+    	 1.0f, -1.0f, -1.0f,
+    	 1.0f,  1.0f, -1.0f,
+    	-1.0f,  1.0f, -1.0f,
+
+    	-1.0f, -1.0f,  1.0f,
+    	-1.0f, -1.0f, -1.0f,
+    	-1.0f,  1.0f, -1.0f,
+    	-1.0f,  1.0f, -1.0f,
+    	-1.0f,  1.0f,  1.0f,
+    	-1.0f, -1.0f,  1.0f,
+
+     	1.0f, -1.0f, -1.0f,
+     	1.0f, -1.0f,  1.0f,
+     	1.0f,  1.0f,  1.0f,
+     	1.0f,  1.0f,  1.0f,
+     	1.0f,  1.0f, -1.0f,
+     	1.0f, -1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+    	-1.0f,  1.0f,  1.0f,
+     	1.0f,  1.0f,  1.0f,
+     	1.0f,  1.0f,  1.0f,
+     	1.0f, -1.0f,  1.0f,
+    	-1.0f, -1.0f,  1.0f,
+
+    	-1.0f,  1.0f, -1.0f,
+     	1.0f,  1.0f, -1.0f,
+     	1.0f,  1.0f,  1.0f,
+     	1.0f,  1.0f,  1.0f,
+    	-1.0f,  1.0f,  1.0f,
+    	-1.0f,  1.0f, -1.0f,
+
+    	-1.0f, -1.0f, -1.0f,
+    	-1.0f, -1.0f,  1.0f,
+     	1.0f, -1.0f, -1.0f,
+     	1.0f, -1.0f, -1.0f,
+    	-1.0f, -1.0f,  1.0f,
+     	1.0f, -1.0f,  1.0f
+    };
+}
+
 void ProceduralShapes::gen_z_cylinder(std::vector<float>& pb,
                                       std::vector<uint16_t>& ib,
                                       float r,

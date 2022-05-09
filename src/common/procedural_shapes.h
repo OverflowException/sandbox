@@ -50,6 +50,13 @@ public:
                               int sectors,
                               int stacks,
                               IndexType i_type);
+
+    // Cube with hard edge
+    // Geometry is so simple that it does not need index buffer
+    static void gen_cube(std::vector<float>& vb,
+                         VertexAttrib attrib,
+                         glm::vec3 half_dim,
+                         IndexType i_type);
     
     
 private:

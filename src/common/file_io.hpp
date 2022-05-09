@@ -146,5 +146,4 @@ bgfx::TextureHandle load_texture_cube_immutable_ktx(const std::string& name) {
 														mem);
 	return handle;
 }
-
 }

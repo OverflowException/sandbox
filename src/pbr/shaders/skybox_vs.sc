@@ -1,6 +1,6 @@
 $input a_position
 
-$output v_frag_pos
+$output v_frag_pos // in world space
 
 #include <bgfx_shader.sh>
 

@@ -6,53 +6,9 @@
 
 #include "common/application.hpp"
 #include "common/file_io.hpp"
+#include "common/pre_computations.hpp"
 #include "common/procedural_shapes.h"
 #include "controls.hpp"
-
-float skyboxVertices[] = {
-    	// positions          
-    	-1.0f,  1.0f, -1.0f,
-    	-1.0f, -1.0f, -1.0f,
-    	 1.0f, -1.0f, -1.0f,
-    	 1.0f, -1.0f, -1.0f,
-    	 1.0f,  1.0f, -1.0f,
-    	-1.0f,  1.0f, -1.0f,
-
-    	-1.0f, -1.0f,  1.0f,
-    	-1.0f, -1.0f, -1.0f,
-    	-1.0f,  1.0f, -1.0f,
-    	-1.0f,  1.0f, -1.0f,
-    	-1.0f,  1.0f,  1.0f,
-    	-1.0f, -1.0f,  1.0f,
-
-     	1.0f, -1.0f, -1.0f,
-     	1.0f, -1.0f,  1.0f,
-     	1.0f,  1.0f,  1.0f,
-     	1.0f,  1.0f,  1.0f,
-     	1.0f,  1.0f, -1.0f,
-     	1.0f, -1.0f, -1.0f,
-
-		-1.0f, -1.0f,  1.0f,
-    	-1.0f,  1.0f,  1.0f,
-     	1.0f,  1.0f,  1.0f,
-     	1.0f,  1.0f,  1.0f,
-     	1.0f, -1.0f,  1.0f,
-    	-1.0f, -1.0f,  1.0f,
-
-    	-1.0f,  1.0f, -1.0f,
-     	1.0f,  1.0f, -1.0f,
-     	1.0f,  1.0f,  1.0f,
-     	1.0f,  1.0f,  1.0f,
-    	-1.0f,  1.0f,  1.0f,
-    	-1.0f,  1.0f, -1.0f,
-
-    	-1.0f, -1.0f, -1.0f,
-    	-1.0f, -1.0f,  1.0f,
-     	1.0f, -1.0f, -1.0f,
-     	1.0f, -1.0f, -1.0f,
-    	-1.0f, -1.0f,  1.0f,
-     	1.0f, -1.0f,  1.0f
-};
 
 class PbrApp : public app::Application
 {
@@ -75,8 +31,8 @@ class PbrApp : public app::Application
 	};
 
 	// buffers
-	bgfx::VertexBufferHandle pbr_vb;
-	bgfx::IndexBufferHandle pbr_ib;
+	bgfx::VertexBufferHandle sphere_vb;
+	bgfx::IndexBufferHandle sphere_ib;
 	bgfx::VertexBufferHandle skybox_vb;
 
 	// shader pograms
@@ -90,6 +46,7 @@ class PbrApp : public app::Application
 	bgfx::TextureHandle tex_normal;
 	bgfx::TextureHandle tex_ao;
 	bgfx::TextureHandle tex_skybox;
+	bgfx::TextureHandle tex_skybox_irr;
 
 	// uniforms
 	bgfx::UniformHandle u_model_inv_t;
@@ -106,7 +63,7 @@ class PbrApp : public app::Application
 	bgfx::UniformHandle s_ao;
 	bgfx::UniformHandle s_skybox;
 
-	
+	bgfx::ViewId opaque_id = 0;
 	uint64_t opaque_state = 0
 		| BGFX_STATE_WRITE_RGB
 		| BGFX_STATE_WRITE_A
@@ -114,6 +71,7 @@ class PbrApp : public app::Application
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_CULL_CW;
 
+	bgfx::ViewId skybox_id = 1;
 	uint64_t skybox_state = 0
 		| BGFX_STATE_WRITE_RGB
 		| BGFX_STATE_WRITE_A
@@ -121,15 +79,14 @@ class PbrApp : public app::Application
 		| BGFX_STATE_DEPTH_TEST_LEQUAL;
 
 	void initialize(int argc, char** argv) {
+		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS | BGFX_DEBUG_WIREFRAME);
+
 		std::vector<float> vb;
 		std::vector<uint16_t> ib;
 
+		// sphere vertices
 		ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-											1.5f, 3, ProceduralShapes::IndexType::TRIANGLE);
-
-		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS | BGFX_DEBUG_WIREFRAME);
-
-		// model vertices
+										1.5f, 3, ProceduralShapes::IndexType::TRIANGLE);
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
@@ -137,16 +94,16 @@ class PbrApp : public app::Application
 			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
 		.end();
-		pbr_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), v_layout);
-		pbr_ib = bgfx::createIndexBuffer(bgfx::copy(ib.data(), ib.size() * sizeof(uint16_t)));
+		sphere_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), v_layout);
+		sphere_ib = bgfx::createIndexBuffer(bgfx::copy(ib.data(), ib.size() * sizeof(uint16_t)));
 
 		// skybox vertices
+		ProceduralShapes::gen_cube(vb, ProceduralShapes::VertexAttrib::POS, glm::vec3(1.0f, 1.0f, 1.0f), ProceduralShapes::TRIANGLE);
 		bgfx::VertexLayout skybox_layout;
 		skybox_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 		.end();
-		int test = sizeof(skyboxVertices);
-		skybox_vb = bgfx::createVertexBuffer(bgfx::copy(skyboxVertices, sizeof(skyboxVertices)), skybox_layout);
+		skybox_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), skybox_layout);
 
 		pbr_prog = io::load_program("shaders/glsl/pbr_vs.bin", "shaders/glsl/pbr_fs.bin");
 		assert(bgfx::isValid(pbr_prog));
@@ -165,9 +122,9 @@ class PbrApp : public app::Application
 		 									"textures/skybox/bottom.jpg",
 		 									"textures/skybox/front.jpg",
 		 									"textures/skybox/back.jpg",});
-
 		// tex_skybox = io::load_ktx_cube_map("textures/skybox/texture-cubemap-test.ktx");
 		// tex_skybox = io::load_texture_cube_immutable_ktx("textures/skybox/warehouse.ktx");
+		tex_skybox_irr = pcp::gen_irradiance_map(tex_skybox, 32);
 
 		// uniforms
 		u_model_inv_t = bgfx::createUniform("u_model_inv_t", bgfx::UniformType::Mat4);
@@ -184,11 +141,19 @@ class PbrApp : public app::Application
 		s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
 		s_ao = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
 		s_skybox = bgfx::createUniform("s_skybox", bgfx::UniformType::Sampler);
+
+		bgfx::setViewClear(opaque_id,
+							BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
+							0x0f0f0fff,
+							1.0f,
+							0);
+		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		bgfx::setViewFrameBuffer(opaque_id, BGFX_INVALID_HANDLE); // set default back buffer. To counteract irradiance map's framebuffer settings
 	}
 
 	int shutdown() {
-		bgfx::destroy(pbr_vb);
-		bgfx::destroy(pbr_ib);
+		bgfx::destroy(sphere_vb);
+		bgfx::destroy(sphere_ib);
 		bgfx::destroy(skybox_vb);
 		bgfx::destroy(pbr_prog);
 		bgfx::destroy(skybox_prog);
@@ -198,6 +163,7 @@ class PbrApp : public app::Application
 		bgfx::destroy(tex_normal);
 		bgfx::destroy(tex_ao);
 		bgfx::destroy(tex_skybox);
+		bgfx::destroy(tex_skybox_irr);
 		bgfx::destroy(u_model_inv_t);
 		bgfx::destroy(u_light_pos);
 		bgfx::destroy(u_light_colors);
@@ -214,22 +180,21 @@ class PbrApp : public app::Application
 	}
 
 	void onReset() {
-		bgfx::setViewClear(0,
+		bgfx::setViewClear(opaque_id,
 							BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
 							0x0f0f0fff,
 							1.0f,
 							0);
-		bgfx::setViewRect(0, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
 	}
 
-	int counter = 0;
 	void update(float dt) {
 		Ctrl::camera_control();
 		glm::mat4 proj = glm::perspective(glm::radians(60.0f), float(getWidth()) / getHeight(), 0.1f, 100.0f);
 		glm::mat4 view = glm::lookAt(Ctrl::eye,
 									Ctrl::eye + Ctrl::front, Ctrl::up);
-		bgfx::setViewTransform(0, &view[0][0], &proj[0][0]);
-		bgfx::setViewRect(0, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		bgfx::setViewTransform(opaque_id, &view[0][0], &proj[0][0]);
+		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
 
 		Ctrl::model_control();
 		// rotation order: z-y-x
@@ -280,19 +245,20 @@ class PbrApp : public app::Application
 		bgfx::setTexture(3, s_normal, tex_normal);
 		bgfx::setTexture(4, s_ao, tex_ao);
 		// bgfx::setTexture(5, s_skybox, tex_skybox);
-		bgfx::setVertexBuffer(0, pbr_vb);
-		bgfx::setIndexBuffer(pbr_ib);
+		bgfx::setVertexBuffer(0, sphere_vb);
+		bgfx::setIndexBuffer(sphere_ib);
 		bgfx::setState(opaque_state);
-		bgfx::submit(0, pbr_prog);
+		bgfx::submit(opaque_id, pbr_prog);
 
-		// skybox
-		view = glm::mat4(glm::mat3(view));
-		bgfx::setViewTransform(1, &view[0][0], &proj[0][0]);
-		bgfx::setViewRect(1, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
-		bgfx::setTexture(0, s_skybox, tex_skybox);
+		// skybox has to be in a separate drawcall since uniform changed
+ 		view = glm::mat4(glm::mat3(view));
+		bgfx::setViewTransform(skybox_id, &view[0][0], &proj[0][0]);
+		bgfx::setViewRect(skybox_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		// bgfx::setTexture(0, s_skybox, tex_skybox);
+		bgfx::setTexture(0, s_skybox, tex_skybox_irr);
 		bgfx::setVertexBuffer(0, skybox_vb);
 		bgfx::setState(skybox_state);
-		bgfx::submit(1, skybox_prog);
+		bgfx::submit(skybox_id, skybox_prog);
 
 		// do not call bgfx::frame() here. Or imgui would flash
 		// bgfx::frame();
