@@ -1,5 +1,5 @@
-git submodule update --init --recursive
-cmake -Bbuild/release -DCMAKE_BUILD_TYPE=Release
+1.git submodule update --init --recursive
+2. cmake -Bbuild/release -DCMAKE_BUILD_TYPE=Release
 
 
 NOTE:
