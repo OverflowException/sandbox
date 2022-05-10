@@ -47,9 +47,12 @@ class PbrApp : public app::Application
 	bgfx::TextureHandle tex_ao;
 	bgfx::TextureHandle tex_skybox;
 	bgfx::TextureHandle tex_skybox_irr;
+	bgfx::TextureHandle tex_skybox_prefilter;
+	bgfx::TextureHandle tex_brdf_lut;
 
 	// uniforms
 	bgfx::UniformHandle u_model_inv_t;
+	bgfx::UniformHandle u_view_inv;
 	bgfx::UniformHandle u_light_pos;
 	bgfx::UniformHandle u_light_colors;
 	bgfx::UniformHandle u_albedo;
@@ -62,6 +65,9 @@ class PbrApp : public app::Application
 	bgfx::UniformHandle s_normal;
 	bgfx::UniformHandle s_ao;
 	bgfx::UniformHandle s_skybox;
+	bgfx::UniformHandle s_skybox_irr;
+	bgfx::UniformHandle s_skybox_prefilter;
+	bgfx::UniformHandle s_brdf_lut;
 
 	bgfx::ViewId opaque_id = 0;
 	uint64_t opaque_state = 0
@@ -111,11 +117,11 @@ class PbrApp : public app::Application
 		assert(bgfx::isValid(skybox_prog));
 
 		// textures
-		tex_albedo = io::load_texture_2d("textures/metal_chipped_paint/albedo.png");
-		tex_roughness = io::load_texture_2d("textures/metal_chipped_paint/roughness.png");
-		tex_metallic = io::load_texture_2d("textures/metal_chipped_paint/metallic.png");
-		tex_normal = io::load_texture_2d("textures/metal_chipped_paint/normal.png");
-		tex_ao = io::load_texture_2d("textures/metal_chipped_paint/ao.png");
+		tex_albedo = io::load_texture_2d("textures/gold_scuffed/albedo.png");
+		tex_roughness = io::load_texture_2d("textures/gold_scuffed/roughness.png");
+		tex_metallic = io::load_texture_2d("textures/gold_scuffed/metallic.png");
+		tex_normal = io::load_texture_2d("textures/gold_scuffed/normal.png");
+		tex_ao = io::load_texture_2d("textures/gold_scuffed/ao.png");
 		tex_skybox = io::load_texture_cube({"textures/skybox/right.jpg",
 		 									"textures/skybox/left.jpg",
 		 									"textures/skybox/top.jpg",
@@ -125,9 +131,12 @@ class PbrApp : public app::Application
 		// tex_skybox = io::load_ktx_cube_map("textures/skybox/texture-cubemap-test.ktx");
 		// tex_skybox = io::load_texture_cube_immutable_ktx("textures/skybox/warehouse.ktx");
 		tex_skybox_irr = pcp::gen_irradiance_map(tex_skybox, 32);
+		tex_skybox_prefilter = pcp::gen_prefilter_map(tex_skybox, 256, 5);
+		tex_brdf_lut = io::load_texture_2d("textures/skybox/brdf_lut.png");
 
 		// uniforms
 		u_model_inv_t = bgfx::createUniform("u_model_inv_t", bgfx::UniformType::Mat4);
+		u_view_inv = bgfx::createUniform("u_view_inv", bgfx::UniformType::Mat4);
 		u_light_pos = bgfx::createUniform("u_light_pos", bgfx::UniformType::Vec4, light_count);
 		u_light_colors = bgfx::createUniform("u_light_colors", bgfx::UniformType::Vec4, light_count);
 
@@ -141,6 +150,9 @@ class PbrApp : public app::Application
 		s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
 		s_ao = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
 		s_skybox = bgfx::createUniform("s_skybox", bgfx::UniformType::Sampler);
+		s_skybox_irr = bgfx::createUniform("s_skybox_irr", bgfx::UniformType::Sampler);
+		s_skybox_prefilter = bgfx::createUniform("s_skybox_prefilter", bgfx::UniformType::Sampler);
+		s_brdf_lut = bgfx::createUniform("s_brdf_lut", bgfx::UniformType::Sampler);
 
 		bgfx::setViewClear(opaque_id,
 							BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
@@ -164,7 +176,10 @@ class PbrApp : public app::Application
 		bgfx::destroy(tex_ao);
 		bgfx::destroy(tex_skybox);
 		bgfx::destroy(tex_skybox_irr);
+		bgfx::destroy(tex_skybox_prefilter);
+		bgfx::destroy(tex_brdf_lut);
 		bgfx::destroy(u_model_inv_t);
+		bgfx::destroy(u_view_inv);
 		bgfx::destroy(u_light_pos);
 		bgfx::destroy(u_light_colors);
 		bgfx::destroy(u_albedo);
@@ -175,6 +190,9 @@ class PbrApp : public app::Application
 		bgfx::destroy(s_normal);
 		bgfx::destroy(s_ao);
 		bgfx::destroy(s_skybox);
+		bgfx::destroy(s_skybox_irr);
+		bgfx::destroy(s_skybox_prefilter);
+		bgfx::destroy(s_brdf_lut);
 
 		return 0;
 	}
@@ -193,8 +211,10 @@ class PbrApp : public app::Application
 		glm::mat4 proj = glm::perspective(glm::radians(60.0f), float(getWidth()) / getHeight(), 0.1f, 100.0f);
 		glm::mat4 view = glm::lookAt(Ctrl::eye,
 									Ctrl::eye + Ctrl::front, Ctrl::up);
+		glm::mat4 view_inv = glm::inverse(view);
 		bgfx::setViewTransform(opaque_id, &view[0][0], &proj[0][0]);
 		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		bgfx::setUniform(u_view_inv, &view_inv);
 
 		Ctrl::model_control();
 		// rotation order: z-y-x
@@ -244,7 +264,9 @@ class PbrApp : public app::Application
 		bgfx::setTexture(2, s_metallic, tex_metallic);
 		bgfx::setTexture(3, s_normal, tex_normal);
 		bgfx::setTexture(4, s_ao, tex_ao);
-		// bgfx::setTexture(5, s_skybox, tex_skybox);
+		bgfx::setTexture(5, s_skybox_irr, tex_skybox_irr);
+		bgfx::setTexture(6, s_skybox_prefilter, tex_skybox_prefilter);
+		bgfx::setTexture(7, s_brdf_lut, tex_brdf_lut);
 		bgfx::setVertexBuffer(0, sphere_vb);
 		bgfx::setIndexBuffer(sphere_ib);
 		bgfx::setState(opaque_state);
@@ -255,7 +277,8 @@ class PbrApp : public app::Application
 		bgfx::setViewTransform(skybox_id, &view[0][0], &proj[0][0]);
 		bgfx::setViewRect(skybox_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
 		// bgfx::setTexture(0, s_skybox, tex_skybox);
-		bgfx::setTexture(0, s_skybox, tex_skybox_irr);
+		// bgfx::setTexture(0, s_skybox, tex_skybox_irr);
+		bgfx::setTexture(0, s_skybox, tex_skybox);
 		bgfx::setVertexBuffer(0, skybox_vb);
 		bgfx::setState(skybox_state);
 		bgfx::submit(skybox_id, skybox_prog);
