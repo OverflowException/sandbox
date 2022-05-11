@@ -1,18 +1,28 @@
-#pragma once
-
-#include <array>
 #include <iostream>
 #include <fstream>
-#include <string>
 #include <sstream>
+#include <vector>
+#include <cassert>
 
-#include "bgfx/bgfx.h"
+#include "file_io.h"
 
-#include "bimg/bimg.h"
 #include "bx/error.h"
-#include "bimg/decode.h"
 
 namespace io {
+
+// allocator
+class Allocator : public bx::AllocatorI {
+public:
+	void* realloc(void* _ptr, size_t _size, size_t _align, const char* _file, uint32_t _line) {
+		if (_size == 0) {
+			free(_ptr);
+			return nullptr;
+		}
+		else {
+			return malloc(_size);
+		}
+	}
+};
 
 const bgfx::Memory* load_memory(const char* filename) {
 	std::ifstream file(filename, std::ios::binary | std::ios::ate);
@@ -64,7 +74,7 @@ bimg::ImageContainer* load_image_to_container(const std::string& name) {
 	ifs.read(buf.data(), static_cast<std::streamsize>(size));
 	ifs.close();
 
-	bx::AllocatorI* allocator = new app::Allocator;
+	bx::AllocatorI* allocator = new Allocator;
 	bx::Error err;
 	bimg::ImageContainer* container = bimg::imageParse(allocator, buf.data(), (uint32_t)buf.size(), bimg::TextureFormat::Count, &err);
 

@@ -1,25 +1,20 @@
-#pragma once
-
 #include <array>
 #include <iostream>
 #include <fstream>
 #include <string>
 #include <sstream>
+#include <glm/gtc/matrix_transform.hpp>
 
-#include "bgfx/bgfx.h"
+#include "pre_computations.h"
 
+#include "glm/matrix.hpp"
 #include "bimg/bimg.h"
 #include "bx/error.h"
 #include "bimg/decode.h"
-#include "common/procedural_shapes.h"
+#include "procedural_shapes.h"
+#include "file_io.h"
 
 namespace pcp {
-
-struct UniformContext {
-	bgfx::UniformHandle hdl;
-	void* value;
-	uint16_t num;
-};
 
 bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 										int res,
@@ -95,7 +90,7 @@ bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 
 bgfx::TextureHandle gen_irradiance_map(bgfx::TextureHandle cube_tex,
 										int res) {
-	bgfx::ProgramHandle prog = io::load_program("shaders/glsl/skybox_vs.bin", "shaders/glsl/irradiance_convolution_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/skybox_vs.bin", "common_shaders/glsl/irradiance_convolution_fs.bin");
 	bgfx::TextureHandle hdl = convolute_cube_map(cube_tex, res, prog, std::vector<UniformContext>());
 	bgfx::destroy(prog);
 	return hdl;
@@ -120,7 +115,7 @@ void blit_cube_map(bgfx::TextureHandle dst,
 bgfx::TextureHandle gen_prefilter_map(bgfx::TextureHandle cube_tex,
 										int res,
 										int mip_levels) {
-	bgfx::ProgramHandle prog = io::load_program("shaders/glsl/skybox_vs.bin", "shaders/glsl/prefilter_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/skybox_vs.bin", "common_shaders/glsl/prefilter_fs.bin");
 
 	bgfx::UniformHandle u_roughness = bgfx::createUniform("u_roughness", bgfx::UniformType::Vec4);
 	std::vector<UniformContext> ucs(1);
@@ -162,7 +157,7 @@ bgfx::TextureHandle gen_brdf_lut(int res) {
 	// bgfx::frame only kick starts rendering,
 	// there is no telling if bgfx could complete rendering a frame before vb is released
 	bgfx::VertexBufferHandle vb_hdl = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), layout);
-	bgfx::ProgramHandle prog = io::load_program("shaders/glsl/brdf_lut_vs.bin", "shaders/glsl/brdf_lut_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/brdf_lut_vs.bin", "common_shaders/glsl/brdf_lut_fs.bin");
 
 	bgfx::TextureHandle tex_lut = bgfx::createTexture2D(res,
 														res,

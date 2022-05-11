@@ -1,7 +1,7 @@
 #include <vector>
 
 #include "common/application.hpp"
-#include "common/file_io.hpp"
+#include "common/file_io.h"
 
 class ScreenQuadApp : public app::Application {
     std::vector<float> vb = {

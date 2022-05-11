@@ -1,12 +1,11 @@
 #include <iostream>
 #include <vector>
 #include <glm/gtc/matrix_transform.hpp>
-#define GLM_ENABLE_EXPERIMENTAL
-#include <glm/gtx/quaternion.hpp>
+#include <glm/gtc/quaternion.hpp>
 
 #include "common/application.hpp"
-#include "common/file_io.hpp"
-#include "common/pre_computations.hpp"
+#include "common/file_io.h"
+#include "common/pre_computations.h"
 #include "common/procedural_shapes.h"
 #include "controls.hpp"
 

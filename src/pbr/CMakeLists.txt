@@ -6,14 +6,9 @@ set(EXEC_NAME pbr)
 file(GLOB SRC ./*.cpp)
 file(GLOB SHADER_SRC ./shaders/*.sc)
 
-#add_executable(${EXEC_NAME} ${SRC} shaders/pbr_vs.sc shaders/pbr_fs.sc
-#                                    shaders/skybox_vs.sc shaders/skybox_fs.sc
-#                                    shaders/irradiance_convolution_fs.sc
-#                                    shaders/prefilter_fs.sc)
-
 add_executable(${EXEC_NAME} ${SRC} ${SHADER_SRC})
 
-target_link_libraries(${EXEC_NAME} PUBLIC graph_arch procedural bimg)
+target_link_libraries(${EXEC_NAME} PUBLIC graph_arch procedural pre_computations)
 
 add_shader(shaders/pbr_vs.sc VERTEX OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
 add_shader(shaders/pbr_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
@@ -21,15 +16,7 @@ add_shader(shaders/pbr_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/s
 add_shader(shaders/skybox_vs.sc VERTEX OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
 add_shader(shaders/skybox_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
 
-# working with skybox_vs
-add_shader(shaders/irradiance_convolution_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
-
-# working with skybox_vs
-add_shader(shaders/prefilter_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
-
-add_shader(shaders/brdf_lut_vs.sc VERTEX OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
-add_shader(shaders/brdf_lut_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
-
 add_custom_command(TARGET ${EXEC_NAME}
                     POST_BUILD
-                    COMMAND cp -frv ${CMAKE_CURRENT_SOURCE_DIR}/textures ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)
+                    COMMAND cp -frv ${CMAKE_CURRENT_SOURCE_DIR}/textures ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/
+                    COMMAND cp -frv ${CMAKE_BINARY_DIR}/src/common/shaders ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/common_shaders)
