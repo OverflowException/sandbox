@@ -9,9 +9,9 @@ NOTE:
 4. equirectangular map should have width twice as its height. If not, edit with pinta
 
 TODO:
-1. brdf lut behaves weirdly. Try generate it on the fly
-2. add mipmapping feature to IBL prefiltering. TO solve the problem of dotty bright area in envronment map
-3. HDR tonemapping pass
+1. brdf lut behaves weirdly. Try generate it on the fly.
+2. add mipmapping feature to IBL prefiltering. To solve the problem of dotty bright area in envronment map
+3. HDR tonemapping pass. object + skybox
 
 
 

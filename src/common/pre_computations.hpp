@@ -41,26 +41,25 @@ bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 
 	std::vector<float> vb;
 	ProceduralShapes::gen_cube(vb, ProceduralShapes::VertexAttrib::POS, glm::vec3(1.0f, 1.0f, 1.0f), ProceduralShapes::IndexType::TRIANGLE);
-	uint32_t v_num = vb.size() / 3;
 	bgfx::VertexLayout layout;
 	layout.begin()
 		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 	.end();
-	bgfx::VertexBufferHandle vb_hdl = bgfx::createVertexBuffer(bgfx::makeRef(vb.data(), vb.size() * sizeof(float)), layout);
+	bgfx::VertexBufferHandle vb_hdl = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), layout);
 
-	bgfx::TextureHandle tex_radiance_map = bgfx::createTextureCube(res,
-																	false,
-																	1,
-																	bgfx::TextureFormat::RGBA16F,
-																	BGFX_SAMPLER_UVW_CLAMP | BGFX_TEXTURE_BLIT_DST);
-	bgfx::TextureHandle tex_radiance_rt = bgfx::createTexture2D(res,
-																res,
+	bgfx::TextureHandle tex_cube_map = bgfx::createTextureCube(res,
 																false,
 																1,
 																bgfx::TextureFormat::RGBA16F,
-																BGFX_TEXTURE_RT);
+																BGFX_SAMPLER_UVW_CLAMP | BGFX_TEXTURE_BLIT_DST);
+	bgfx::TextureHandle tex_2d_rt = bgfx::createTexture2D(res,
+														res,
+														false,
+														1,
+														bgfx::TextureFormat::RGBA16F,
+														BGFX_TEXTURE_RT);
 
-	bgfx::FrameBufferHandle fb = bgfx::createFrameBuffer(1, &tex_radiance_rt, true);
+	bgfx::FrameBufferHandle fb = bgfx::createFrameBuffer(1, &tex_2d_rt, true);
 	glm::mat4 proj = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 1.0f);
 	bgfx::UniformHandle s_tex = bgfx::createUniform("s_env", bgfx::UniformType::Sampler);
 	uint64_t state = 0
@@ -81,7 +80,7 @@ bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 			bgfx::setUniform(uc.hdl, uc.value, uc.num);
 		}
 		bgfx::submit(0, prog);
-		bgfx::blit(1, tex_radiance_map, 0, 0, 0, side_order[i], tex_radiance_rt);
+		bgfx::blit(1, tex_cube_map, 0, 0, 0, side_order[i], tex_2d_rt);
 		bgfx::frame();
 	}
 
@@ -90,7 +89,7 @@ bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 	bgfx::destroy(fb);
 	bgfx::destroy(vb_hdl);
 
-	return tex_radiance_map;
+	return tex_cube_map;
 }
 
 
@@ -143,4 +142,53 @@ bgfx::TextureHandle gen_prefilter_map(bgfx::TextureHandle cube_tex,
 
 	return hdl;
 }
+
+bgfx::TextureHandle gen_brdf_lut(int res) {
+ 	std::vector<float> vb = {
+		-1.0f,  1.0f, 0.0f,
+    	-1.0f, -1.0f, 0.0f,
+    	 1.0f, -1.0f, 0.0f,
+    	 1.0f, -1.0f, 0.0f,
+    	 1.0f,  1.0f, 0.0f,
+    	-1.0f,  1.0f, 0.0f,
+	};
+
+	bgfx::VertexLayout layout;
+	layout.begin()
+		.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+	.end();
+
+	// use bgfx::copy here insead of bgfx::makeRef.
+	// bgfx::frame only kick starts rendering,
+	// there is no telling if bgfx could complete rendering a frame before vb is released
+	bgfx::VertexBufferHandle vb_hdl = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), layout);
+	bgfx::ProgramHandle prog = io::load_program("shaders/glsl/brdf_lut_vs.bin", "shaders/glsl/brdf_lut_fs.bin");
+
+	bgfx::TextureHandle tex_lut = bgfx::createTexture2D(res,
+														res,
+														false,
+														1,
+														bgfx::TextureFormat::RG16F,
+														BGFX_TEXTURE_RT);
+	
+	bgfx::FrameBufferHandle fb = bgfx::createFrameBuffer(1, &tex_lut, false);
+
+	bgfx::setViewClear(0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x101010ff, 1.0f);
+	bgfx::setViewRect(0, 0, 0, res, res);
+	bgfx::setViewFrameBuffer(0, fb);	
+	bgfx::setState(BGFX_STATE_WRITE_RGB |
+                	BGFX_STATE_WRITE_A | 
+                	BGFX_STATE_DEPTH_TEST_ALWAYS);
+	bgfx::setVertexBuffer(0, vb_hdl);
+	bgfx::submit(0, prog);
+	bgfx::frame();
+
+	// todo: destroy stuff
+	bgfx::destroy(fb);
+	bgfx::destroy(prog);
+	bgfx::destroy(vb_hdl);
+
+	return tex_lut;
+}
+
 }

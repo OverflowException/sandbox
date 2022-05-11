@@ -85,7 +85,7 @@ class PbrApp : public app::Application
 		| BGFX_STATE_DEPTH_TEST_LEQUAL;
 
 	void initialize(int argc, char** argv) {
-		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS | BGFX_DEBUG_WIREFRAME);
+		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 
 		std::vector<float> vb;
 		std::vector<uint16_t> ib;
@@ -132,7 +132,8 @@ class PbrApp : public app::Application
 		// tex_skybox = io::load_texture_cube_immutable_ktx("textures/skybox/warehouse.ktx");
 		tex_skybox_irr = pcp::gen_irradiance_map(tex_skybox, 32);
 		tex_skybox_prefilter = pcp::gen_prefilter_map(tex_skybox, 256, 5);
-		tex_brdf_lut = io::load_texture_2d("textures/skybox/brdf_lut.png");
+		// tex_brdf_lut = io::load_texture_2d("textures/skybox/brdf_lut_v_flipped.png");
+		tex_brdf_lut = pcp::gen_brdf_lut(512);
 
 		// uniforms
 		u_model_inv_t = bgfx::createUniform("u_model_inv_t", bgfx::UniformType::Mat4);
@@ -259,7 +260,7 @@ class PbrApp : public app::Application
 		}
 		bgfx::setUniform(u_light_colors, light_color_intensities, light_count);
 		
- 		bgfx::setTexture(0, s_albedo, tex_albedo);
+  		bgfx::setTexture(0, s_albedo, tex_albedo);
 		bgfx::setTexture(1, s_roughness, tex_roughness);
 		bgfx::setTexture(2, s_metallic, tex_metallic);
 		bgfx::setTexture(3, s_normal, tex_normal);
