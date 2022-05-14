@@ -1,3 +1,4 @@
+set(RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/runtime)
 include_directories(./)
 add_subdirectory(common)
 add_subdirectory(pbr)
