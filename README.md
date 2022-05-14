@@ -13,4 +13,7 @@ TODO:
 2. add mipmapping feature to IBL prefiltering. To solve the problem of dotty bright area in envronment map
 3. HDR tonemapping pass in a separate pass. object + skybox
 
-
+Document:
+1. generate vertex tangent attribute on sphere
+2. icosphere seam
+3. brdf lut border clamping

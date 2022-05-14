@@ -14,8 +14,8 @@ add_library(pre_computations STATIC pre_computations.cpp ${SHADER_SRC})
 target_link_libraries(pre_computations PUBLIC bx bimg bgfx file_io)
 
 #shaders for pre_computations
-add_shader(shaders/skybox_vs.sc VERTEX OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders GLSL 330)
-add_shader(shaders/irradiance_convolution_fs.sc FRAGMENT OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders GLSL 330)
-add_shader(shaders/prefilter_fs.sc FRAGMENT OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders GLSL 330)
-add_shader(shaders/brdf_lut_vs.sc VERTEX OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders GLSL 330)
-add_shader(shaders/brdf_lut_fs.sc FRAGMENT OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/shaders GLSL 330)
+add_shader(shaders/skybox_vs.sc VERTEX OUTPUT ${RUNTIME_OUTPUT_DIRECTORY}/common_shaders GLSL 330)
+add_shader(shaders/irradiance_convolution_fs.sc FRAGMENT OUTPUT ${RUNTIME_OUTPUT_DIRECTORY}/common_shaders GLSL 330)
+add_shader(shaders/prefilter_fs.sc FRAGMENT OUTPUT ${RUNTIME_OUTPUT_DIRECTORY}/common_shaders GLSL 330)
+add_shader(shaders/brdf_lut_vs.sc VERTEX OUTPUT ${RUNTIME_OUTPUT_DIRECTORY}/common_shaders GLSL 330)
+add_shader(shaders/brdf_lut_fs.sc FRAGMENT OUTPUT ${RUNTIME_OUTPUT_DIRECTORY}/common_shaders GLSL 330)

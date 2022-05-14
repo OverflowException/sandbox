@@ -1,5 +1,4 @@
-set(CUR_BIN_DIR ${CMAKE_BINARY_DIR}/bin)
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CUR_BIN_DIR}/pbr)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${RUNTIME_OUTPUT_DIRECTORY}/pbr)
 
 set(EXEC_NAME pbr)
 
@@ -18,5 +17,4 @@ add_shader(shaders/skybox_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY
 
 add_custom_command(TARGET ${EXEC_NAME}
                     POST_BUILD
-                    COMMAND cp -frv ${CMAKE_CURRENT_SOURCE_DIR}/textures ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/
-                    COMMAND cp -frv ${CMAKE_BINARY_DIR}/src/common/shaders ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/common_shaders)
+                    COMMAND cp -frv ${CMAKE_CURRENT_SOURCE_DIR}/textures ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/)

@@ -90,7 +90,8 @@ bgfx::TextureHandle convolute_cube_map(bgfx::TextureHandle cube_tex,
 
 bgfx::TextureHandle gen_irradiance_map(bgfx::TextureHandle cube_tex,
 										int res) {
-	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/skybox_vs.bin", "common_shaders/glsl/irradiance_convolution_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("../common_shaders/glsl/skybox_vs.bin",
+												"../common_shaders/glsl/irradiance_convolution_fs.bin");
 	bgfx::TextureHandle hdl = convolute_cube_map(cube_tex, res, prog, std::vector<UniformContext>());
 	bgfx::destroy(prog);
 	return hdl;
@@ -115,7 +116,8 @@ void blit_cube_map(bgfx::TextureHandle dst,
 bgfx::TextureHandle gen_prefilter_map(bgfx::TextureHandle cube_tex,
 										int res,
 										int mip_levels) {
-	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/skybox_vs.bin", "common_shaders/glsl/prefilter_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("../common_shaders/glsl/skybox_vs.bin",
+												"../common_shaders/glsl/prefilter_fs.bin");
 
 	bgfx::UniformHandle u_roughness = bgfx::createUniform("u_roughness", bgfx::UniformType::Vec4);
 	std::vector<UniformContext> ucs(1);
@@ -157,14 +159,19 @@ bgfx::TextureHandle gen_brdf_lut(int res) {
 	// bgfx::frame only kick starts rendering,
 	// there is no telling if bgfx could complete rendering a frame before vb is released
 	bgfx::VertexBufferHandle vb_hdl = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), layout);
-	bgfx::ProgramHandle prog = io::load_program("common_shaders/glsl/brdf_lut_vs.bin", "common_shaders/glsl/brdf_lut_fs.bin");
+	bgfx::ProgramHandle prog = io::load_program("../common_shaders/glsl/brdf_lut_vs.bin",
+												"../common_shaders/glsl/brdf_lut_fs.bin");
 
 	bgfx::TextureHandle tex_lut = bgfx::createTexture2D(res,
 														res,
 														false,
 														1,
 														bgfx::TextureFormat::RG16F,
-														BGFX_TEXTURE_RT);
+														// clamp border.
+														// Since dot(n, v) in fresnel calculations could be a little over 1.0f,
+														// wrap back to 0.0f will result in small bright circle in the middle.
+														// Document this
+														BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP);
 	
 	bgfx::FrameBufferHandle fb = bgfx::createFrameBuffer(1, &tex_lut, false);
 
