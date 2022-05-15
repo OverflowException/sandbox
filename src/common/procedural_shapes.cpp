@@ -181,7 +181,8 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
             vb.insert(vb.end(), {vec3_nb[i].x, vec3_nb[i].y, vec3_nb[i].z});
         }
         if (attrib & VertexAttrib::UV) {
-            vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
+            // 4x repeated on u, 2x repeated on v
+            vb.insert(vb.end(), {vec2_uv[i].x * 4.0f, vec2_uv[i].y * 2.0f});
         }
         if (attrib & VertexAttrib::TANGENT) {
             vb.insert(vb.end(), {vec3_tb[i].x, vec3_tb[i].y, vec3_tb[i].z});
