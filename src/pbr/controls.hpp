@@ -91,11 +91,18 @@ public:
 	static float roughness;
 	static float ao;
 	static void material_control() {
-		ImGui::Begin("pbr");
+		ImGui::Begin("material");
 		ImGui::ColorPicker3("albedo", (float*)&albedo);
 		ImGui::SliderFloat("metallic", &metallic, 0.0f, 1.0f);
 		ImGui::SliderFloat("roughness", &roughness, 0.0f, 1.0f);
 		ImGui::SliderFloat("ao", &ao, 0.0f, 1.0f);
+		ImGui::End();
+	}
+
+	static float height_map_scale;
+	static void height_map_control() {
+		ImGui::Begin("height map");
+		ImGui::SliderFloat("scale", &height_map_scale, 0.0f, 0.2f);
 		ImGui::End();
 	}
 };
@@ -111,3 +118,5 @@ ImVec4 Ctrl::albedo   = ImVec4(0.5f, 0.5f, 0.5f, 0.5f);
 float Ctrl::metallic  = 0.5f;
 float Ctrl::roughness = 0.5f;
 float Ctrl::ao        = 1.0f;
+
+float Ctrl::height_map_scale = 0.0f;

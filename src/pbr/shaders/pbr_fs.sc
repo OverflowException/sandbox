@@ -9,7 +9,7 @@ uniform vec4 u_light_pos[4];  // in view space
 uniform vec4 u_light_colors[4];
 
 uniform vec4 u_albedo;
-uniform vec4 u_metallic_roughness_ao;
+uniform vec4 u_metallic_roughness_ao_scale;
 
 uniform mat4 u_view_inv;
 
@@ -18,9 +18,10 @@ SAMPLER2D(s_roughness, 1);
 SAMPLER2D(s_metallic, 2);
 SAMPLER2D(s_normal, 3);
 SAMPLER2D(s_ao, 4);
-SAMPLERCUBE(s_skybox_irr, 5);
-SAMPLERCUBE(s_skybox_prefilter, 6);
-SAMPLER2D(s_brdf_lut, 7);
+SAMPLER2D(s_height, 5);
+SAMPLERCUBE(s_skybox_irr, 6);
+SAMPLERCUBE(s_skybox_prefilter, 7);
+SAMPLER2D(s_brdf_lut, 8);
 
 float DistributionGGX(vec3 n, vec3 h, float roughness);
 float GeometrySchlickGGX(float n_v, float roughness);
@@ -42,15 +43,50 @@ vec3 view2world(vec3 v){
     return vec3(u_view_inv * vec4(v, 0.0f));
 }
 
+vec2 parallax_mapping(vec3 v, vec3 tangent, vec3 norm, vec2 coord) {
+    vec3 bitangent = cross(norm, tangent);
+    mat3 tbn = mat3(tangent, bitangent, norm);
+    // view vector's coordinate in tangent space
+    vec3 v_tbn = transpose(tbn) * v;
+
+    float height_scale = u_metallic_roughness_ao_scale[3];
+    const int step_count = 10;
+    vec3 step = -(v_tbn * vec3(height_scale / v_tbn.z)) / float(step_count);
+    vec2 uv_result = vec2(0.0f);
+    for (int i = 0; i < step_count; ++i) {
+        vec3 cur = vec3(coord, height_scale) + float(i) * step;
+        vec3 next = cur + step;
+        float h_cur = texture2D(s_height, cur.xy).r * height_scale;
+        float h_next = texture2D(s_height, next.xy).r * height_scale;
+        if (h_cur < cur.z &&
+            h_next > next.z) {
+            float ratio = (cur.z - h_cur) / (h_next - next.z);
+            ratio = ratio / (1.0f + ratio);
+            uv_result = next.xy * vec2(ratio) + cur.xy * vec2(1.0 - ratio);
+            break;
+        } else if (h_cur == cur.z) {
+            uv_result = cur.xy;
+            break;
+        } else if (h_next == next.z) {
+            uv_result = next.xy;
+            break;
+        }
+    }
+    
+    return uv_result;
+}
+
 const float PI = 3.14159265359;
 
 void main() {
-    vec3 albedo = pow(vec3(texture2D(s_albedo, v_texcoord0)), vec3(2.2f));
-    float roughness = texture2D(s_roughness, v_texcoord0).r;
-    float metallic = texture2D(s_metallic, v_texcoord0).r;
-    float ao = texture2D(s_ao, v_texcoord0).r;
-    vec3 n = compute_normal(v_frag_norm, v_tangent, v_texcoord0);
     vec3 v = normalize(vec3(0.0f) - v_frag_pos);
+    vec2 h_coord = parallax_mapping(v, v_tangent, v_frag_norm, v_texcoord0);
+
+    vec3 albedo = pow(vec3(texture2D(s_albedo, h_coord)), vec3(2.2f));
+    float roughness = texture2D(s_roughness, h_coord).r;
+    float metallic = texture2D(s_metallic, h_coord).r;
+    float ao = texture2D(s_ao, h_coord).r;
+    vec3 n = compute_normal(v_frag_norm, v_tangent, h_coord);
     vec3 r = reflect(-v, n);
 
     // vec3 albedo = vec3(u_albedo);

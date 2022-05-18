@@ -44,6 +44,7 @@ class PbrApp : public app::Application
 	bgfx::TextureHandle tex_metallic;
 	bgfx::TextureHandle tex_normal;
 	bgfx::TextureHandle tex_ao;
+	bgfx::TextureHandle tex_height;
 	bgfx::TextureHandle tex_skybox;
 	bgfx::TextureHandle tex_skybox_irr;
 	bgfx::TextureHandle tex_skybox_prefilter;
@@ -55,7 +56,7 @@ class PbrApp : public app::Application
 	bgfx::UniformHandle u_light_pos;
 	bgfx::UniformHandle u_light_colors;
 	bgfx::UniformHandle u_albedo;
-	bgfx::UniformHandle u_metallic_roughness_ao;
+	bgfx::UniformHandle u_metallic_roughness_ao_scale;
 
 	// samplers
 	bgfx::UniformHandle s_albedo;
@@ -63,6 +64,7 @@ class PbrApp : public app::Application
 	bgfx::UniformHandle s_metallic;
 	bgfx::UniformHandle s_normal;
 	bgfx::UniformHandle s_ao;
+	bgfx::UniformHandle s_height;
 	bgfx::UniformHandle s_skybox;
 	bgfx::UniformHandle s_skybox_irr;
 	bgfx::UniformHandle s_skybox_prefilter;
@@ -116,11 +118,13 @@ class PbrApp : public app::Application
 		assert(bgfx::isValid(skybox_prog));
 
 		// textures
-		tex_albedo = io::load_texture_2d("textures/gold_scuffed/albedo.png");
-		tex_roughness = io::load_texture_2d("textures/gold_scuffed/roughness.png");
-		tex_metallic = io::load_texture_2d("textures/gold_scuffed/metallic.png");
-		tex_normal = io::load_texture_2d("textures/gold_scuffed/normal.png");
-		tex_ao = io::load_texture_2d("textures/gold_scuffed/ao.png");
+		std::string model_name = "textures/rough_rock";
+		tex_albedo 		= io::load_texture_2d(model_name + "/albedo.png");
+		tex_roughness 	= io::load_texture_2d(model_name + "/roughness.png");
+		tex_metallic 	= io::load_texture_2d(model_name + "/metallic.png");
+		tex_normal 		= io::load_texture_2d(model_name + "/normal.png");
+		tex_ao 			= io::load_texture_2d(model_name + "/ao.png");
+		tex_height		= io::load_texture_2d(model_name + "/height.png");
 		tex_skybox = io::load_texture_cube({"textures/skybox/right.jpg",
 		 									"textures/skybox/left.jpg",
 		 									"textures/skybox/top.jpg",
@@ -141,7 +145,7 @@ class PbrApp : public app::Application
 		u_light_colors = bgfx::createUniform("u_light_colors", bgfx::UniformType::Vec4, light_count);
 
 		u_albedo = bgfx::createUniform("u_albedo", bgfx::UniformType::Vec4);
-		u_metallic_roughness_ao = bgfx::createUniform("u_metallic_roughness_ao", bgfx::UniformType::Vec4);
+		u_metallic_roughness_ao_scale = bgfx::createUniform("u_metallic_roughness_ao_scale", bgfx::UniformType::Vec4);
 
 		// samplers
 		s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
@@ -149,6 +153,7 @@ class PbrApp : public app::Application
 		s_metallic = bgfx::createUniform("s_metallic", bgfx::UniformType::Sampler);
 		s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
 		s_ao = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
+		s_height = bgfx::createUniform("s_height", bgfx::UniformType::Sampler);
 		s_skybox = bgfx::createUniform("s_skybox", bgfx::UniformType::Sampler);
 		s_skybox_irr = bgfx::createUniform("s_skybox_irr", bgfx::UniformType::Sampler);
 		s_skybox_prefilter = bgfx::createUniform("s_skybox_prefilter", bgfx::UniformType::Sampler);
@@ -183,7 +188,7 @@ class PbrApp : public app::Application
 		bgfx::destroy(u_light_pos);
 		bgfx::destroy(u_light_colors);
 		bgfx::destroy(u_albedo);
-		bgfx::destroy(u_metallic_roughness_ao);
+		bgfx::destroy(u_metallic_roughness_ao_scale);
 		bgfx::destroy(s_albedo);
 		bgfx::destroy(s_roughness);
 		bgfx::destroy(s_metallic);
@@ -226,10 +231,12 @@ class PbrApp : public app::Application
 		glm::mat4 model_inv_t = glm::transpose(glm::inverse(model));
 		bgfx::setUniform(u_model_inv_t, &model_inv_t);
 
+		// mterial & height map control
 		Ctrl::material_control();
+		Ctrl::height_map_control();
 		bgfx::setUniform(u_albedo, &Ctrl::albedo);
-		float mra[3] = {Ctrl::metallic, Ctrl::roughness, Ctrl::ao};
-		bgfx::setUniform(u_metallic_roughness_ao, mra);
+		float mra[4] = {Ctrl::metallic, Ctrl::roughness, Ctrl::ao, Ctrl::height_map_scale};
+		bgfx::setUniform(u_metallic_roughness_ao_scale, mra);
 
 		// light control
 		// TODO: lighting position computation is not correct
@@ -264,9 +271,10 @@ class PbrApp : public app::Application
 		bgfx::setTexture(2, s_metallic, tex_metallic);
 		bgfx::setTexture(3, s_normal, tex_normal);
 		bgfx::setTexture(4, s_ao, tex_ao);
-		bgfx::setTexture(5, s_skybox_irr, tex_skybox_irr);
-		bgfx::setTexture(6, s_skybox_prefilter, tex_skybox_prefilter);
-		bgfx::setTexture(7, s_brdf_lut, tex_brdf_lut);
+		bgfx::setTexture(5, s_height, tex_height);
+		bgfx::setTexture(6, s_skybox_irr, tex_skybox_irr);
+		bgfx::setTexture(7, s_skybox_prefilter, tex_skybox_prefilter);
+		bgfx::setTexture(8, s_brdf_lut, tex_brdf_lut);
 		bgfx::setVertexBuffer(0, sphere_vb);
 		bgfx::setIndexBuffer(sphere_ib);
 		bgfx::setState(opaque_state);

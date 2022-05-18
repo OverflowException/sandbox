@@ -17,3 +17,4 @@ Document:
 1. generate vertex tangent attribute on sphere
 2. icosphere seam
 3. brdf lut border clamping
+4. parallax mapping step number's impact
