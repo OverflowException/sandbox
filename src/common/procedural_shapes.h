@@ -25,15 +25,24 @@ public:
     typedef std::vector<glm::vec3> PositionBuffer;
     typedef std::vector<glm::vec3> NormalBuffer;
     typedef std::vector<glm::vec2> UVBuffer;
-    typedef std::vector<u16vec3> IndexBuffer;
     typedef std::vector<glm::vec3> TangentBuffer;
+    typedef std::vector<u16vec3> IndexBuffer;
+
+    struct BufData {
+        PositionBuffer pb;
+        NormalBuffer nb;
+        UVBuffer uvb;
+        TangentBuffer tb;
+        IndexBuffer ib;
+    };
     
     static void gen_ico_sphere(std::vector<float>& vb,
                                std::vector<uint16_t>& ib,
                                VertexAttrib attrib,
                                float r,
                                int lod,
-                               IndexType i_type);
+                               IndexType i_type,
+                               BufData* data = nullptr);
     
     static void gen_z_cylinder(std::vector<float>& pb,
                                std::vector<uint16_t>& ib,
@@ -57,6 +66,10 @@ public:
                          VertexAttrib attrib,
                          glm::vec3 half_dim,
                          IndexType i_type);
+
+    static void displace_prism(const std::vector<float>& vb,
+                               const std::vector<uint16_t>& ib,
+                               const BufData& buf);
     
     
 private:
