@@ -271,6 +271,7 @@ class PbrApp : public app::Application
 		bgfx::destroy(tex_metallic);
 		bgfx::destroy(tex_normal);
 		bgfx::destroy(tex_ao);
+		bgfx::destroy(tex_height);
 		bgfx::destroy(tex_skybox);
 		bgfx::destroy(tex_skybox_irr);
 		bgfx::destroy(tex_skybox_prefilter);
@@ -286,6 +287,7 @@ class PbrApp : public app::Application
 		bgfx::destroy(s_metallic);
 		bgfx::destroy(s_normal);
 		bgfx::destroy(s_ao);
+		bgfx::destroy(s_height);
 		bgfx::destroy(s_skybox);
 		bgfx::destroy(s_skybox_irr);
 		bgfx::destroy(s_skybox_prefilter);
