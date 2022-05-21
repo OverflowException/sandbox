@@ -84,23 +84,26 @@ vec2 parallax_mapping(vec3 p,
     // view vector's coordinate in tangent space
     vec3 v_tbn = transpose(tbn) * v;
 
-    const int step_count = 20;
-    const float inv_step_count = 1.0f / float(step_count);
+    // dynamic linear search step number, to eliminate stepping artifacts at grazing angle
+    const float max_step = 100.0f;
+    const float min_step = 10.0f;
 
-    float v_start = coord.z;
+    float r = clamp(abs(dot(norm, v)), 0.0f, 1.0f);
+    int step_count = int(min_step + (1.0f - r) * (max_step - min_step));
+    float inv_step_count = 1.0f / float(step_count);
+
+    // linear search
+    float v_cur = coord.z;
     float v_step = v_tbn.z * prism_man.man.t * inv_step_count;
-    vec2 coord_start = coord.xy;
-    vec2 coord_step = (coord_end - coord_start) * vec2(inv_step_count);
+    vec2 coord_cur = coord.xy;
+    vec2 coord_step = (coord_end - coord_cur) * vec2(inv_step_count);
     for (int i = 0; i < step_count; ++i) {
-        float v_cur = v_start + float(i) * v_step;
         float v_next = v_cur + v_step;
-        vec2 coord_cur = coord_start + vec2(float(i)) * coord_step;
         vec2 coord_next = coord_cur + coord_step;
         // TODO: why height ratio?
         float height_ratio = 0.15f;
         float h_cur = texture2D(s_height, coord_cur).r * height_ratio;
         float h_next = texture2D(s_height, coord_next).r * height_ratio;
-
         if (h_cur < v_cur &&
             h_next > v_next) {
             float ratio = (v_cur - h_cur) / (h_next - v_next);
@@ -111,6 +114,9 @@ vec2 parallax_mapping(vec3 p,
         } else if (h_next == v_next) {
             return coord_next;
         }
+
+        v_cur += v_step;
+        coord_cur += coord_step;
     }
 
     // no intersection between ray and height map
