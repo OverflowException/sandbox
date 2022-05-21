@@ -2,8 +2,18 @@ $input v_frag_pos  // in view space
 $input v_frag_norm // in view space
 $input v_texcoord0
 $input v_tangent   // in view space
+$input v_prism_pos0 
+$input v_prism_pos1 
+$input v_prism_pos2 
+$input v_prism_pos3 
+$input v_prism_pos4
+$input v_prism_pos5
+$input v_prism_uv0
+$input v_prism_uv1
+$input v_prism_uv2
 
 #include <bgfx_shader.sh>
+#include "intersect.sc"
 
 uniform vec4 u_light_pos[4];  // in view space
 uniform vec4 u_light_colors[4];
@@ -28,7 +38,6 @@ float GeometrySchlickGGX(float n_v, float roughness);
 float GeometrySmith(vec3 n, vec3 v, vec3 l, float roughness);
 vec3 fresnelSchlick(float cos, vec3 f0);
 vec3 fresnelSchlickRoughness(float cos, vec3 f0, float roughness);
-vec3 compute_normal();
 
 vec3 compute_normal(vec3 norm, vec3 tangent, vec2 coord) {
     vec3 bitangent = cross(norm, tangent);
@@ -43,44 +52,101 @@ vec3 view2world(vec3 v){
     return vec3(u_view_inv * vec4(v, 0.0f));
 }
 
-vec2 parallax_mapping(vec3 v, vec3 tangent, vec3 norm, vec2 coord) {
+vec2 parallax_mapping(vec3 p,
+                      vec3 v,
+                      vec3 tangent,
+                      vec3 norm,
+                      vec3 coord,
+                      vec3 prism_pos[6],
+                      vec2 prism_uv[6]) {
+    vec2 coord_end;
+    Ray ray;
+    ray.o = p;
+    ray.r = v;
+    PrismManifold prism_man = intersect(ray, prism_pos);
+    if(prism_man.intersect == 1) {
+        // intersection with prism
+        coord_end = vec2(prism_man.man.bari[0]) * prism_uv[prism_man.indices[0]] +
+                    vec2(prism_man.man.bari[1]) * prism_uv[prism_man.indices[1]] +
+                    vec2(prism_man.man.bari[2]) * prism_uv[prism_man.indices[2]];
+        // DEBUG:
+        // showing ray depth
+        // return vec2(prism_man.man.t * -v.z);
+        // showing UV map
+        // return coord_end;
+    } else {
+        // no intersection with prism, which is an abnormality
+        discard;
+    }
+
     vec3 bitangent = cross(norm, tangent);
     mat3 tbn = mat3(tangent, bitangent, norm);
     // view vector's coordinate in tangent space
     vec3 v_tbn = transpose(tbn) * v;
 
-    float height_scale = u_metallic_roughness_ao_scale[3];
-    const int step_count = 10;
-    vec3 step = -(v_tbn * vec3(height_scale / v_tbn.z)) / float(step_count);
-    vec2 uv_result = vec2(0.0f);
+    const int step_count = 20;
+    const float inv_step_count = 1.0f / float(step_count);
+
+    float v_start = coord.z;
+    float v_step = v_tbn.z * prism_man.man.t * inv_step_count;
+    vec2 coord_start = coord.xy;
+    vec2 coord_step = (coord_end - coord_start) * vec2(inv_step_count);
     for (int i = 0; i < step_count; ++i) {
-        vec3 cur = vec3(coord, height_scale) + float(i) * step;
-        vec3 next = cur + step;
-        float h_cur = texture2D(s_height, cur.xy).r * height_scale;
-        float h_next = texture2D(s_height, next.xy).r * height_scale;
-        if (h_cur < cur.z &&
-            h_next > next.z) {
-            float ratio = (cur.z - h_cur) / (h_next - next.z);
+        float v_cur = v_start + float(i) * v_step;
+        float v_next = v_cur + v_step;
+        vec2 coord_cur = coord_start + vec2(float(i)) * coord_step;
+        vec2 coord_next = coord_cur + coord_step;
+        // TODO: why height ratio?
+        float height_ratio = 0.15f;
+        float h_cur = texture2D(s_height, coord_cur).r * height_ratio;
+        float h_next = texture2D(s_height, coord_next).r * height_ratio;
+
+        if (h_cur < v_cur &&
+            h_next > v_next) {
+            float ratio = (v_cur - h_cur) / (h_next - v_next);
             ratio = ratio / (1.0f + ratio);
-            uv_result = next.xy * vec2(ratio) + cur.xy * vec2(1.0 - ratio);
-            break;
-        } else if (h_cur == cur.z) {
-            uv_result = cur.xy;
-            break;
-        } else if (h_next == next.z) {
-            uv_result = next.xy;
-            break;
+            return coord_next * vec2(ratio) + coord_cur * vec2(1.0 - ratio);
+        } else if (h_cur == v_cur) {
+            return coord_cur;
+        } else if (h_next == v_next) {
+            return coord_next;
         }
     }
-    
-    return uv_result;
+
+    // no intersection between ray and height map
+    discard;
 }
 
 const float PI = 3.14159265359;
 
 void main() {
     vec3 v = normalize(vec3(0.0f) - v_frag_pos);
-    vec2 h_coord = parallax_mapping(v, v_tangent, v_frag_norm, v_texcoord0);
+
+    vec3 prism_pos[6];
+    prism_pos[0] = v_prism_pos0;
+    prism_pos[1] = v_prism_pos1;
+    prism_pos[2] = v_prism_pos2;
+    prism_pos[3] = v_prism_pos3;
+    prism_pos[4] = v_prism_pos4;
+    prism_pos[5] = v_prism_pos5;
+
+    vec2 prism_uv[6];
+    prism_uv[0] = v_prism_uv0;
+    prism_uv[1] = v_prism_uv1;
+    prism_uv[2] = v_prism_uv2;
+    prism_uv[3] = v_prism_uv0;
+    prism_uv[4] = v_prism_uv1;
+    prism_uv[5] = v_prism_uv2;
+    vec2 h_coord = parallax_mapping(v_frag_pos,
+                                    -v,
+                                    v_tangent,
+                                    v_frag_norm,
+                                    v_texcoord0,
+                                    prism_pos,
+                                    prism_uv);
+    // DEBUG
+    // gl_FragColor = vec4(h_coord, 0.0f, 1.0f);
+    // return;
 
     vec3 albedo = pow(vec3(texture2D(s_albedo, h_coord)), vec3(2.2f));
     float roughness = texture2D(s_roughness, h_coord).r;

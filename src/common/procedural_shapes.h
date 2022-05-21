@@ -67,8 +67,8 @@ public:
                          glm::vec3 half_dim,
                          IndexType i_type);
 
-    static void displace_prism(const std::vector<float>& vb,
-                               const std::vector<uint16_t>& ib,
+    static void displace_prism(std::vector<float>& vb,
+                               std::vector<uint16_t>& ib,
                                const BufData& buf);
     
     

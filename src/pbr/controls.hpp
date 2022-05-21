@@ -109,7 +109,7 @@ public:
 
 glm::vec3 Ctrl::model_euler = glm::vec3(0.0f, 0.0f, 0.0f);
 
-glm::vec3 Ctrl::eye   = glm::vec3(0.0f, 0.0f, 5.0f);
+glm::vec3 Ctrl::eye   = glm::vec3(0.0f, 0.0f, 3.0f);
 glm::vec3 Ctrl::up    = glm::vec3(0.0f, 1.0f, 0.0f);
 glm::vec3 Ctrl::right = glm::vec3(1.0f, 0.0f, 0.0f);
 glm::vec3 Ctrl::front = glm::vec3(0.0f, 0.0f, -1.0f);

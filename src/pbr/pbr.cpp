@@ -11,6 +11,81 @@
 
 class PbrApp : public app::Application
 {
+	void temp_tri(std::vector<float>& vb, std::vector<uint16_t>& ib) {
+		glm::vec3 p[3] = {glm::vec3(0.0f, 0.0f, 0.0f),
+					   	  glm::vec3(1.0f, 0.0f, 0.0f),
+					   	  glm::vec3(0.0f, 1.0f, 0.0f)};
+
+		glm::vec3 n[3] = {glm::vec3(0.0f, 0.0f, 1.0f),
+					   	  glm::vec3(0.0f, 0.0f, 1.0f),
+					   	  glm::vec3(0.0f, 0.0f, 1.0f)};
+
+		glm::vec3 uv[3] = {glm::vec3(0.0f, 0.0f, 0.0f),
+					   	   glm::vec3(1.0f, 0.0f, 0.0f),
+					   	   glm::vec3(0.0f, 1.0f, 0.0f)};
+		
+		glm::vec3 t[3] = {glm::vec3(1.0f, 0.0f, 0.0f),
+			   		   	  glm::vec3(1.0f, 0.0f, 0.0f),
+			   		   	  glm::vec3(1.0f, 0.0f, 0.0f)};
+		
+		float height_ratio = 0.15f;
+		glm::vec3 dp[3] = {p[0] + glm::vec3(height_ratio) * n[0],
+					   	   p[1] + glm::vec3(height_ratio) * n[1],
+					   	   p[2] + glm::vec3(height_ratio) * n[2]};
+
+		glm::vec3 duv[3] = {uv[0] + glm::vec3(0.0f, 0.0f, height_ratio),
+							uv[1] + glm::vec3(0.0f, 0.0f, height_ratio),
+							uv[2] + glm::vec3(0.0f, 0.0f, height_ratio)};
+		
+		// original vertices
+		for (int i = 0; i < 3; ++i) {
+			vb.insert(vb.end(), {p[i].x, p[i].y, p[i].z});
+			vb.insert(vb.end(), {n[i].x, n[i].y, n[i].z});
+			vb.insert(vb.end(), {uv[i].x, uv[i].y, uv[i].z});
+			vb.insert(vb.end(), {t[i].x, t[i].y, t[i].z});
+
+			vb.insert(vb.end(), {p[0].x, p[0].y, p[0].z});
+			vb.insert(vb.end(), {p[1].x, p[1].y, p[1].z});
+			vb.insert(vb.end(), {p[2].x, p[2].y, p[2].z});
+
+			vb.insert(vb.end(), {dp[0].x, dp[0].y, dp[0].z});
+			vb.insert(vb.end(), {dp[1].x, dp[1].y, dp[1].z});
+			vb.insert(vb.end(), {dp[2].x, dp[2].y, dp[2].z});
+
+			vb.insert(vb.end(), {uv[0].x, uv[0].y});
+			vb.insert(vb.end(), {uv[1].x, uv[1].y});
+			vb.insert(vb.end(), {uv[2].x, uv[2].y});
+		}
+		// displaced vertices
+		for (int i = 0; i < 3; ++i) {
+			vb.insert(vb.end(), {dp[i].x, dp[i].y, dp[i].z});
+			vb.insert(vb.end(), {n[i].x, n[i].y, n[i].z});
+			vb.insert(vb.end(), {duv[i].x, duv[i].y, duv[i].z});
+			vb.insert(vb.end(), {t[i].x, t[i].y, t[i].z});
+
+			vb.insert(vb.end(), {p[0].x, p[0].y, p[0].z});
+			vb.insert(vb.end(), {p[1].x, p[1].y, p[1].z});
+			vb.insert(vb.end(), {p[2].x, p[2].y, p[2].z});
+
+			vb.insert(vb.end(), {dp[0].x, dp[0].y, dp[0].z});
+			vb.insert(vb.end(), {dp[1].x, dp[1].y, dp[1].z});
+			vb.insert(vb.end(), {dp[2].x, dp[2].y, dp[2].z});
+
+			vb.insert(vb.end(), {uv[0].x, uv[0].y});
+			vb.insert(vb.end(), {uv[1].x, uv[1].y});
+			vb.insert(vb.end(), {uv[2].x, uv[2].y});
+		}
+
+		ib.insert(ib.end(), {0, 2, 1,
+							 3, 4, 5,
+							 0, 1, 4,
+							 0, 4, 3,
+							 0, 3, 5,
+							 0, 5, 2,
+							 1, 2, 5,
+							 1, 5, 4});
+	}
+
 	// lights
 	const static int light_count = 4;
 	ImVec4 light_colors[light_count] = {
@@ -92,14 +167,31 @@ class PbrApp : public app::Application
 		std::vector<uint16_t> ib;
 
 		// sphere vertices
-		ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										1.5f, 3, ProceduralShapes::IndexType::TRIANGLE);
+		// ProceduralShapes::BufData* inter_data = new ProceduralShapes::BufData; // intermediate date
+		// ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+		// 								1.5f, 0, ProceduralShapes::IndexType::TRIANGLE, inter_data);
+		// ProceduralShapes::displace_prism(vb, ib, *inter_data);
+
+		temp_tri(vb, ib);
+
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::TexCoord0, 3, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
+
+			// prism vertices' positions, top slab + bottom slab
+			.add(bgfx::Attrib::Color0,  3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Color1,  3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Color2,  3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Color3,  3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Indices, 3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Weight,  3, bgfx::AttribType::Float)
+			// bottom slab's uv coorinates
+			.add(bgfx::Attrib::TexCoord1, 2, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::TexCoord2, 2, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::TexCoord3, 2, bgfx::AttribType::Float)
 		.end();
 		sphere_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), v_layout);
 		sphere_ib = bgfx::createIndexBuffer(bgfx::copy(ib.data(), ib.size() * sizeof(uint16_t)));

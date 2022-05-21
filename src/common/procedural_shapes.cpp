@@ -173,6 +173,16 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
         } 
     } */
 
+    // user needs intermediate data
+    if (buf_data) {
+        buf_data->pb = std::move(vec3_pb);
+        buf_data->nb = std::move(vec3_nb);
+        buf_data->uvb = std::move(vec2_uv);
+        buf_data->tb = std::move(vec3_tb);
+        buf_data->ib = std::move(vec3_ib);
+        return;
+    }
+
     size_t v_size = vec3_pb.size();
     for (int i = 0; i < v_size; ++i) {
         if (attrib & VertexAttrib::POS) {
@@ -200,11 +210,6 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
         }
     } else {
         assert(false);
-    }
-
-    // user needs intermediate data
-    if (buf_data) {
-        bu
     }
 }
 
@@ -539,9 +544,10 @@ void ProceduralShapes::z_cylinder(PositionBuffer& pb, IndexBuffer& ib, float r, 
     }
 }
 
-static void displace_prism(std::vector<float>& vb,
-                           std::vector<uint16_t>& ib,
-                           const BufData& buf) {
+void ProceduralShapes::displace_prism(std::vector<float>& vb,
+                                      std::vector<uint16_t>& ib,
+                                      const BufData& buf) {
+    assert(!buf.pb.empty());
     // TODO: uint16_t index might not be sufficient
     PositionBuffer dst_pb;
     NormalBuffer dst_nb;
@@ -551,59 +557,66 @@ static void displace_prism(std::vector<float>& vb,
     PositionBuffer prism_pb[6];
     UVBuffer prism_uvb[3];
 
-    PositionBuffer& src_pb = buf.pb;
-    NormalBuffer& src_nb = buf.nb;
-    UVBuffer& src_uvb = buf.uvb;
-    TangentBuffer& src_tb = buf.tb;
-    IndexBuffer& src_ib = buf.ib;
+    const PositionBuffer& src_pb = buf.pb;
+    const NormalBuffer& src_nb = buf.nb;
+    const UVBuffer& src_uvb = buf.uvb;
+    const TangentBuffer& src_tb = buf.tb;
+    const IndexBuffer& src_ib = buf.ib;
 
-    for (size_t offset = 0; offset < ib.size(); offset += 3) {
-        uint16_t i0 = src_ib[offset];
-        uint16_t i1 = src_ib[offset + 1];
-        uint16_t i2 = src_ib[offset + 2];
+    for (const u16vec3& i : src_ib) {
+        // positions of top slab vertices
+        uint16_t i0 = i.x;
+        uint16_t i1 = i.y;        
+        uint16_t i2 = i.z;
+        const glm::vec3& p0 = src_pb[i0];
+        const glm::vec3& p1 = src_pb[i1];
+        const glm::vec3& p2 = src_pb[i2];
+        const glm::vec3& n0 = src_nb[i0];
+        const glm::vec3& n1 = src_nb[i1];
+        const glm::vec3& n2 = src_nb[i2];
 
-        glm::vec3 displaced_p0 = src_pb[i0] + src_nb[i0];
-        glm::vec3 displaced_p1 = src_pb[i1] + src_nb[i1];
-        glm::vec3 displaced_p2 = src_pb[i2] + src_nb[i2];
+        glm::vec3 displaced_p0 = p0 + n0;
+        glm::vec3 displaced_p1 = p1 + n1;
+        glm::vec3 displaced_p2 = p2 + n2;
 
         if (!src_pb.empty()) {
-            dst_pb.insert(dst_pb.end(), {src_pb[i0], src_pb[i1], src_pb[i2]});
-            prism_pb[0].push_back(src_pb[i0]);
-            prism_pb[1].push_back(src_pb[i2]);
-            prism_pb[2].push_back(src_pb[i3]);
+            dst_pb.insert(dst_pb.end(), {p0, p1, p2});
+            prism_pb[0].push_back(p0);
+            prism_pb[1].push_back(p1);
+            prism_pb[2].push_back(p2);
             prism_pb[3].push_back(displaced_p0);
             prism_pb[4].push_back(displaced_p1);
             prism_pb[5].push_back(displaced_p2);
         }
         if (!src_nb.empty()) {
-            dst_nb.insert(dst_nb.end(), {src_nb[i0], src_nb[i1], src_nb[i2]});
+            dst_nb.insert(dst_nb.end(), {n0, n1, n2});
         }
         if (!src_uvb.empty()) {
             dst_uvb.insert(dst_uvb.end(), {src_uvb[i0], src_uvb[i1], src_uvb[i2]});
-            prism_uvb[0].push_back(prism_uvb[i0]);
-            prism_uvb[1].push_back(prism_uvb[i1]);
-            prism_uvb[2].push_back(prism_uvb[i2]);
+            prism_uvb[0].push_back(src_uvb[i0]);
+            prism_uvb[1].push_back(src_uvb[i1]);
+            prism_uvb[2].push_back(src_uvb[i2]);
         }
         if (!src_tb.empty()) {
             dst_tb.insert(dst_tb.end(), {src_tb[i0], src_tb[i1], src_tb[i2]});
         }
 
-        uint16_t dst_i0 = 2 * offset;
+        uint16_t dst_i0 = (uint16_t(dst_pb.size()) - 3) * 2;
         uint16_t dst_i1 = dst_i0 + 1;
         uint16_t dst_i2 = dst_i0 + 2;
         uint16_t dst_i3 = dst_i0 + 3;
         uint16_t dst_i4 = dst_i0 + 4;
         uint16_t dst_i5 = dst_i0 + 5;
         // slabs
-        dst_ib.emplace_back({dst_i0, dst_i2, dst_i1});
-        dst_ib.emplace_back({dst_i3, dst_i4, dst_i5});
+        dst_ib.emplace_back(dst_i0, dst_i2, dst_i1);
+        dst_ib.emplace_back(dst_i3, dst_i4, dst_i5);
         // walls
-        dst_ib.emplace_back({dst_i0, dst_i4, dst_i3});
-        dst_ib.emplace_back({dst_i0, dst_i1, dst_i4});
-        dst_ib.emplace_back({dst_i1, dst_i2, dst_i5});
-        dst_ib.emplace_back({dst_i1, dst_i5, dst_i4});
-        dst_ib.emplace_back({dst_i0, dst_i5, dst_i2});
-        dst_ib.emplace_back({dst_i0, dst_i3, dst_i5});
+        // dst_ib.emplace_back(dst_i0, dst_i4, dst_i3);
+        // dst_ib.emplace_back(dst_i0, dst_i1, dst_i4);
+        // dst_ib.emplace_back(dst_i1, dst_i2, dst_i5);
+        // dst_ib.emplace_back(dst_i1, dst_i5, dst_i4);
+        // dst_ib.emplace_back(dst_i0, dst_i5, dst_i2);
+        // dst_ib.emplace_back(dst_i0, dst_i3, dst_i5);
     }
 
     // copy to ib
