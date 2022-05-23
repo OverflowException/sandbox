@@ -85,7 +85,7 @@ vec2 parallax_mapping(vec3 p,
     vec3 v_tbn = transpose(tbn) * v;
 
     // dynamic linear search step number, to eliminate stepping artifacts at grazing angle
-    const float max_step = 100.0f;
+    const float max_step = 40.0f;
     const float min_step = 10.0f;
 
     float r = clamp(abs(dot(norm, v)), 0.0f, 1.0f);
@@ -101,7 +101,7 @@ vec2 parallax_mapping(vec3 p,
         float v_next = v_cur + v_step;
         vec2 coord_next = coord_cur + coord_step;
         // TODO: why height ratio?
-        float height_ratio = 0.15f;
+        float height_ratio = 0.3f;
         float h_cur = texture2D(s_height, coord_cur).r * height_ratio;
         float h_next = texture2D(s_height, coord_next).r * height_ratio;
         if (h_cur < v_cur &&

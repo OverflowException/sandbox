@@ -167,12 +167,12 @@ class PbrApp : public app::Application
 		std::vector<uint16_t> ib;
 
 		// sphere vertices
-		// ProceduralShapes::BufData* inter_data = new ProceduralShapes::BufData; // intermediate date
-		// ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-		// 								1.5f, 0, ProceduralShapes::IndexType::TRIANGLE, inter_data);
-		// ProceduralShapes::displace_prism(vb, ib, *inter_data);
+		ProceduralShapes::BufData* inter_data = new ProceduralShapes::BufData; // intermediate date
+		ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+										1.5f, 3, ProceduralShapes::IndexType::TRIANGLE, inter_data);
+		ProceduralShapes::displace_prism(vb, ib, 0.3f, *inter_data);
 
-		temp_tri(vb, ib);
+		// temp_tri(vb, ib);
 
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()

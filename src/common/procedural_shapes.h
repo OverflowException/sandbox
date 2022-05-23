@@ -25,15 +25,17 @@ public:
     typedef std::vector<glm::vec3> PositionBuffer;
     typedef std::vector<glm::vec3> NormalBuffer;
     typedef std::vector<glm::vec2> UVBuffer;
+    typedef std::vector<glm::vec3> UVWBuffer;
     typedef std::vector<glm::vec3> TangentBuffer;
     typedef std::vector<u16vec3> IndexBuffer;
 
     struct BufData {
+        VertexAttrib   attrib;
         PositionBuffer pb;
-        NormalBuffer nb;
-        UVBuffer uvb;
-        TangentBuffer tb;
-        IndexBuffer ib;
+        NormalBuffer   nb;
+        UVBuffer       uvb;
+        TangentBuffer  tb;
+        IndexBuffer    ib;
     };
     
     static void gen_ico_sphere(std::vector<float>& vb,
@@ -69,8 +71,8 @@ public:
 
     static void displace_prism(std::vector<float>& vb,
                                std::vector<uint16_t>& ib,
+                               float height,
                                const BufData& buf);
-    
     
 private:
     

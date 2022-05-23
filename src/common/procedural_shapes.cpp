@@ -175,6 +175,7 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
 
     // user needs intermediate data
     if (buf_data) {
+        buf_data->attrib = attrib;
         buf_data->pb = std::move(vec3_pb);
         buf_data->nb = std::move(vec3_nb);
         buf_data->uvb = std::move(vec2_uv);
@@ -546,16 +547,23 @@ void ProceduralShapes::z_cylinder(PositionBuffer& pb, IndexBuffer& ib, float r, 
 
 void ProceduralShapes::displace_prism(std::vector<float>& vb,
                                       std::vector<uint16_t>& ib,
+                                      float height,
                                       const BufData& buf) {
-    assert(!buf.pb.empty());
+    assert(buf.attrib == VertexAttrib::POS_NORM_UV_TANGENT);
+
     // TODO: uint16_t index might not be sufficient
     PositionBuffer dst_pb;
     NormalBuffer dst_nb;
-    UVBuffer dst_uvb;
+    UVWBuffer dst_uvwb;
     TangentBuffer dst_tb;
     IndexBuffer dst_ib;
-    PositionBuffer prism_pb[6];
-    UVBuffer prism_uvb[3];
+
+    PositionBuffer dst_displaced_pb;
+    UVWBuffer dst_displaced_uvwb;
+
+    PositionBuffer prism_bottom_pb;
+    PositionBuffer prism_top_pb;
+    UVBuffer prism_uvb;
 
     const PositionBuffer& src_pb = buf.pb;
     const NormalBuffer& src_nb = buf.nb;
@@ -571,35 +579,36 @@ void ProceduralShapes::displace_prism(std::vector<float>& vb,
         const glm::vec3& p0 = src_pb[i0];
         const glm::vec3& p1 = src_pb[i1];
         const glm::vec3& p2 = src_pb[i2];
+
         const glm::vec3& n0 = src_nb[i0];
         const glm::vec3& n1 = src_nb[i1];
         const glm::vec3& n2 = src_nb[i2];
 
-        glm::vec3 displaced_p0 = p0 + n0;
-        glm::vec3 displaced_p1 = p1 + n1;
-        glm::vec3 displaced_p2 = p2 + n2;
+        const glm::vec3& uvw0 = glm::vec3(src_uvb[i0], 0.0f);
+        const glm::vec3& uvw1 = glm::vec3(src_uvb[i1], 0.0f);
+        const glm::vec3& uvw2 = glm::vec3(src_uvb[i2], 0.0f);
 
-        if (!src_pb.empty()) {
-            dst_pb.insert(dst_pb.end(), {p0, p1, p2});
-            prism_pb[0].push_back(p0);
-            prism_pb[1].push_back(p1);
-            prism_pb[2].push_back(p2);
-            prism_pb[3].push_back(displaced_p0);
-            prism_pb[4].push_back(displaced_p1);
-            prism_pb[5].push_back(displaced_p2);
-        }
-        if (!src_nb.empty()) {
-            dst_nb.insert(dst_nb.end(), {n0, n1, n2});
-        }
-        if (!src_uvb.empty()) {
-            dst_uvb.insert(dst_uvb.end(), {src_uvb[i0], src_uvb[i1], src_uvb[i2]});
-            prism_uvb[0].push_back(src_uvb[i0]);
-            prism_uvb[1].push_back(src_uvb[i1]);
-            prism_uvb[2].push_back(src_uvb[i2]);
-        }
-        if (!src_tb.empty()) {
-            dst_tb.insert(dst_tb.end(), {src_tb[i0], src_tb[i1], src_tb[i2]});
-        }
+        const glm::vec3& t0 = src_tb[i0];
+        const glm::vec3& t1 = src_tb[i1];
+        const glm::vec3& t2 = src_tb[i2];
+
+        glm::vec3 displaced_p0 = p0 + height * n0;
+        glm::vec3 displaced_p1 = p1 + height * n1;
+        glm::vec3 displaced_p2 = p2 + height * n2;
+
+        glm::vec3 displaced_uvw0 = uvw0 + glm::vec3(0.0f, 0.0f, height);
+        glm::vec3 displaced_uvw1 = uvw1 + glm::vec3(0.0f, 0.0f, height);
+        glm::vec3 displaced_uvw2 = uvw2 + glm::vec3(0.0f, 0.0f, height);
+
+        dst_pb.insert(dst_pb.end(), {p0, p1, p2});
+        dst_nb.insert(dst_nb.end(), {n0, n1, n2});
+        dst_uvwb.insert(dst_uvwb.end(), {uvw0, uvw1, uvw2});
+        dst_tb.insert(dst_tb.end(), {t0, t1, t2});
+        dst_displaced_pb.insert(dst_displaced_pb.end(), {displaced_p0, displaced_p1, displaced_p2});
+        dst_displaced_uvwb.insert(dst_displaced_uvwb.end(), {displaced_uvw0, displaced_uvw1, displaced_uvw2});
+        prism_bottom_pb.insert(prism_bottom_pb.end(), {p0, p1, p2});
+        prism_top_pb.insert(prism_top_pb.end(), {displaced_p0, displaced_p1, displaced_p2});
+        prism_uvb.insert(prism_uvb.end(), {glm::vec2(uvw0), glm::vec2(uvw1), glm::vec2(uvw2)});
 
         uint16_t dst_i0 = (uint16_t(dst_pb.size()) - 3) * 2;
         uint16_t dst_i1 = dst_i0 + 1;
@@ -611,12 +620,12 @@ void ProceduralShapes::displace_prism(std::vector<float>& vb,
         dst_ib.emplace_back(dst_i0, dst_i2, dst_i1);
         dst_ib.emplace_back(dst_i3, dst_i4, dst_i5);
         // walls
-        // dst_ib.emplace_back(dst_i0, dst_i4, dst_i3);
-        // dst_ib.emplace_back(dst_i0, dst_i1, dst_i4);
-        // dst_ib.emplace_back(dst_i1, dst_i2, dst_i5);
-        // dst_ib.emplace_back(dst_i1, dst_i5, dst_i4);
-        // dst_ib.emplace_back(dst_i0, dst_i5, dst_i2);
-        // dst_ib.emplace_back(dst_i0, dst_i3, dst_i5);
+        dst_ib.emplace_back(dst_i0, dst_i1, dst_i4);
+        dst_ib.emplace_back(dst_i0, dst_i4, dst_i3);
+        dst_ib.emplace_back(dst_i0, dst_i3, dst_i5);
+        dst_ib.emplace_back(dst_i0, dst_i5, dst_i2);
+        dst_ib.emplace_back(dst_i1, dst_i2, dst_i5);
+        dst_ib.emplace_back(dst_i1, dst_i5, dst_i4);
     }
 
     // copy to ib
@@ -624,49 +633,51 @@ void ProceduralShapes::displace_prism(std::vector<float>& vb,
         ib.insert(ib.end(), { i.x, i.y, i.z });
     }
 
-    // copy to vb
+    // copy attributes to vb
     size_t v_size = dst_pb.size();
-    for (int i = 0; i < v_size; ++i) {
+    assert(v_size % 3 == 0);
+    for (int i = 0; i < v_size; i += 3) {
         // bottom slab, original
-        if (!dst_pb.empty()) {
-            vb.insert(vb.end(), {dst_pb[i].x, dst_pb[i].y, dst_pb[i].z});
-        }
-        if (!dst_nb.empty()) {
-            vb.insert(vb.end(), {dst_nb[i].x, dst_nb[i].y, dst_nb[i].z});
-        }
-        if (!dst_uvb.empty()) {
-            vb.insert(vb.end(), {dst_uvb[i].x, dst_uvb[i].y});
-        }
-        if (!dst_tb.empty()) {
-            vb.insert(vb.end(), {dst_tb[i].x, dst_tb[i].y, dst_tb[i].z});
-        }
-        for (int pi = 0; pi < 6; ++pi) {
-            vb.insert(vb.end(), {prism_pb[pi][i].x, prism_pb[pi][i].y, prism_pb[pi][i].z});
-        }
-        for (int pi = 0; pi < 3; ++pi) {
-            vb.insert(vb.end(), {prism_uvb[pi][i].x, prism_uvb[pi][i].y});
-        }
+        for (int j = 0; j < 3; ++j) {
+            int k = i + j;
+            vb.insert(vb.end(), {dst_pb[k].x, dst_pb[k].y, dst_pb[k].z});
+            vb.insert(vb.end(), {dst_nb[k].x, dst_nb[k].y, dst_nb[k].z});
+            vb.insert(vb.end(), {dst_uvwb[k].x, dst_uvwb[k].y, dst_uvwb[k].z});
+            vb.insert(vb.end(), {dst_tb[k].x, dst_tb[k].y, dst_tb[k].z});
 
+            vb.insert(vb.end(), {prism_bottom_pb[i + 0].x, prism_bottom_pb[i + 0].y, prism_bottom_pb[i + 0].z});
+            vb.insert(vb.end(), {prism_bottom_pb[i + 1].x, prism_bottom_pb[i + 1].y, prism_bottom_pb[i + 1].z});
+            vb.insert(vb.end(), {prism_bottom_pb[i + 2].x, prism_bottom_pb[i + 2].y, prism_bottom_pb[i + 2].z});
+
+            vb.insert(vb.end(), {prism_top_pb[i + 0].x, prism_top_pb[i + 0].y, prism_top_pb[i + 0].z});
+            vb.insert(vb.end(), {prism_top_pb[i + 1].x, prism_top_pb[i + 1].y, prism_top_pb[i + 1].z});
+            vb.insert(vb.end(), {prism_top_pb[i + 2].x, prism_top_pb[i + 2].y, prism_top_pb[i + 2].z});
+            
+            vb.insert(vb.end(), {prism_uvb[i + 0].x, prism_uvb[i + 0].y});
+            vb.insert(vb.end(), {prism_uvb[i + 1].x, prism_uvb[i + 1].y});
+            vb.insert(vb.end(), {prism_uvb[i + 2].x, prism_uvb[i + 2].y});
+        }
         // top slab, displaced
-        if (!dst_pb.empty()) {
-            vb.insert(vb.end(), {dst_pb[i].x + dst_nb[i].x, dst_pb[i].y + dst_nb[i].y, dst_pb[i].z + dst_nb[i].z});
-        }
-        if (!dst_nb.empty()) {
-            vb.insert(vb.end(), {dst_nb[i].x, dst_nb[i].y, dst_nb[i].z});
-        }
-        if (!dst_uvb.empty()) {
-            vb.insert(vb.end(), {dst_uvb[i].x, dst_uvb[i].y});
-        }
-        if (!dst_tb.empty()) {
-            vb.insert(vb.end(), {dst_tb[i].x, dst_tb[i].y, dst_tb[i].z});
-        }
-        for (int pi = 0; pi < 6; ++pi) {
-            vb.insert(vb.end(), {prism_pb[pi][i].x, prism_pb[pi][i].y, prism_pb[pi][i].z});
-        }
-        for (int pi = 0; pi < 3; ++pi) {
-            vb.insert(vb.end(), {prism_uvb[pi][i].x, prism_uvb[pi][i].y});
+        for (int j = 0; j < 3; ++j) {
+            int k = i + j;
+            vb.insert(vb.end(), {dst_displaced_pb[k].x, dst_displaced_pb[k].y, dst_displaced_pb[k].z});
+            vb.insert(vb.end(), {dst_nb[k].x, dst_nb[k].y, dst_nb[k].z});
+            vb.insert(vb.end(), {dst_displaced_uvwb[k].x, dst_displaced_uvwb[k].y, dst_displaced_uvwb[k].z});
+            vb.insert(vb.end(), {dst_tb[k].x, dst_tb[k].y, dst_tb[k].z});
+
+            vb.insert(vb.end(), {prism_bottom_pb[i + 0].x, prism_bottom_pb[i + 0].y, prism_bottom_pb[i + 0].z});
+            vb.insert(vb.end(), {prism_bottom_pb[i + 1].x, prism_bottom_pb[i + 1].y, prism_bottom_pb[i + 1].z});
+            vb.insert(vb.end(), {prism_bottom_pb[i + 2].x, prism_bottom_pb[i + 2].y, prism_bottom_pb[i + 2].z});
+
+            vb.insert(vb.end(), {prism_top_pb[i + 0].x, prism_top_pb[i + 0].y, prism_top_pb[i + 0].z});
+            vb.insert(vb.end(), {prism_top_pb[i + 1].x, prism_top_pb[i + 1].y, prism_top_pb[i + 1].z});
+            vb.insert(vb.end(), {prism_top_pb[i + 2].x, prism_top_pb[i + 2].y, prism_top_pb[i + 2].z});
+            
+            vb.insert(vb.end(), {prism_uvb[i + 0].x, prism_uvb[i + 0].y});
+            vb.insert(vb.end(), {prism_uvb[i + 1].x, prism_uvb[i + 1].y});
+            vb.insert(vb.end(), {prism_uvb[i + 2].x, prism_uvb[i + 2].y});
         }
     }
-
 }
+
 

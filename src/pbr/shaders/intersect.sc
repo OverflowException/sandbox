@@ -114,31 +114,6 @@ PrismManifold intersect(Ray ray, vec3 prism[6]) {
     triangle_indices[22] = 5;
     triangle_indices[23] = 4;
 
-    // triangles[0] = prism[0];
-    // triangles[1] = prism[2];
-    // triangles[2] = prism[1];
-    // triangles[3] = prism[3];
-    // triangles[4] = prism[4];
-    // triangles[5] = prism[5];
-    // triangles[6] = prism[0];
-    // triangles[7] = prism[1];
-    // triangles[8] = prism[4];
-    // triangles[9] = prism[0];
-    // triangles[10] = prism[4];
-    // triangles[11] = prism[3];
-    // triangles[12] = prism[0];
-    // triangles[13] = prism[3];
-    // triangles[14] = prism[5];
-    // triangles[15] = prism[0];
-    // triangles[16] = prism[5];
-    // triangles[17] = prism[2];
-    // triangles[18] = prism[1];
-    // triangles[19] = prism[2];
-    // triangles[20] = prism[5];
-    // triangles[21] = prism[1];
-    // triangles[22] = prism[5];
-    // triangles[23] = prism[4];
-
     for (int i = 0; i < 24; i += 3) {
         vec3 tri[3];
         tri[0] = prism[triangle_indices[i]];
