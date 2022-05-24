@@ -122,6 +122,11 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
                 i.z = vec3_pb.size() - 1;
             }
         }
+        // repeat 4x on u, repeat 2x on v
+        for (auto& uv : vec2_uv) {
+            uv.x *= 4.0f;
+            uv.y *= 2.0f;
+        }
     }
 
     if (attrib & VertexAttrib::TANGENT) {
@@ -194,7 +199,7 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
         }
         if (attrib & VertexAttrib::UV) {
             // 4x repeated on u, 2x repeated on v
-            vb.insert(vb.end(), {vec2_uv[i].x * 4.0f, vec2_uv[i].y * 2.0f});
+            vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
         }
         if (attrib & VertexAttrib::TANGENT) {
             vb.insert(vb.end(), {vec3_tb[i].x, vec3_tb[i].y, vec3_tb[i].z});

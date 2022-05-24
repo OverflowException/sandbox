@@ -116,9 +116,12 @@ PrismManifold intersect(Ray ray, vec3 prism[6]) {
 
     for (int i = 0; i < 24; i += 3) {
         vec3 tri[3];
-        tri[0] = prism[triangle_indices[i]];
-        tri[1] = prism[triangle_indices[i + 1]];
-        tri[2] = prism[triangle_indices[i + 2]];
+        int i0 = triangle_indices[i];
+        int i1 = triangle_indices[i + 1];
+        int i2 = triangle_indices[i + 2];
+        tri[0] = prism[i0];
+        tri[1] = prism[i1];
+        tri[2] = prism[i2];
         if (facing(ray, tri) == 0) {
             TriManifold tri_man = intersect(ray, tri);
             if (tri_man.intersect == 1) {
