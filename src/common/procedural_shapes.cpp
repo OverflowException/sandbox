@@ -8,6 +8,101 @@
 #include <set>
 #include <cstdio>
 
+void ProceduralShapes::gen_quad_mesh(std::vector<float>& vb,
+                                     std::vector<uint16_t>& ib,
+                                     VertexAttrib attrib,
+                                     u16vec2 res,
+                                     glm::vec2 half_dim) {
+    assert((int)res.x * (int)res.y < (int)std::numeric_limits<uint16_t>::max());
+    PositionBuffer vec3_pb;
+    NormalBuffer vec3_nb;
+    UVBuffer vec2_uv;
+    TangentBuffer vec3_tb;
+    IndexBuffer vec3_ib;
+
+    // populate position and uv buffers
+    glm::vec2 uv_step = glm::vec2(1.0f / res.x, 1.0f / res.y);
+    glm::vec2 pos_step = half_dim * glm::vec2(2.0f) * uv_step;
+    for (int row = 0; row <= res.y; ++row) {
+        for (int col = 0; col <= res.x; ++col) {
+            // upper-left corder as origin, to accomodate uv
+            vec3_pb.emplace_back(-half_dim.x + pos_step.x * col,
+                                  half_dim.y - pos_step.y * row,
+                                  0.0f);
+            if (attrib & VertexAttrib::UV) {
+                vec2_uv.emplace_back(uv_step.x * col,
+                                     uv_step.y * row);
+            }
+        }
+    }
+    // populate index buffer
+    // 00 ---10
+    // | \   |
+    // |  \  |
+    // |   \ |
+    // 01 ---11
+    uint16_t v_per_row = (uint16_t)res.x + 1;
+    for (uint16_t row = 0; row < res.y; ++row) {
+        for (uint16_t col = 0; col < res.x; ++col) {
+            uint16_t i00 = v_per_row * row + col;
+            uint16_t i10 = i00 + 1;
+            uint16_t i01 = i00 + v_per_row;
+            uint16_t i11 = i01 + 1;
+            vec3_ib.emplace_back(i00, i11, i10);
+            vec3_ib.emplace_back(i00, i01, i11);
+        }
+    }
+
+    // set vertex buffer
+    // +z face
+    size_t v_size = vec3_pb.size();
+    for (int i = 0; i < v_size; ++i) {
+        if (attrib & VertexAttrib::POS) {
+            vb.insert(vb.end(), {vec3_pb[i].x, vec3_pb[i].y, vec3_pb[i].z});
+        }
+        if (attrib & VertexAttrib::NORM) {
+            vb.insert(vb.end(), {0.0f, 0.0f, 1.0f});
+        }
+        if (attrib & VertexAttrib::UV) {
+            // 4x repeated on u, 2x repeated on v
+            vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
+        }
+        if (attrib & VertexAttrib::TANGENT) {
+            vb.insert(vb.end(), {1.0f, 0.0f, 0.0f});
+        }
+    }
+    // -z face
+    for (int i = 0; i < v_size; ++i) {
+        if (attrib & VertexAttrib::POS) {
+            vb.insert(vb.end(), {vec3_pb[i].x, vec3_pb[i].y, vec3_pb[i].z});
+        }
+        if (attrib & VertexAttrib::NORM) {
+            vb.insert(vb.end(), {0.0f, 0.0f, -1.0f});
+        }
+        if (attrib & VertexAttrib::UV) {
+            // 4x repeated on u, 2x repeated on v
+            vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
+        }
+        if (attrib & VertexAttrib::TANGENT) {
+            vb.insert(vb.end(), {-1.0f, 0.0f, 0.0f});
+        }
+    }
+
+    // set index buffer
+    // +z face
+    for (auto& i : vec3_ib) {
+        ib.insert(ib.end(), { i.x, i.y, i.z });
+    }
+    // -z face
+    uint16_t face_size = (res.x + 1) * (res.y + 1);
+    for (auto& i : vec3_ib) {
+        ib.insert(ib.end(), {uint16_t(i.x + face_size),
+                             uint16_t(i.z + face_size),
+                             uint16_t(i.y + face_size)});
+    }
+}
+
+
 void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
                                       std::vector<uint16_t>& ib,
                                       VertexAttrib attrib,

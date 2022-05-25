@@ -90,8 +90,8 @@ class PbrApp : public app::Application
 		std::vector<uint16_t> ib;
 
 		// sphere vertices
-		ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										1.5f, 3, ProceduralShapes::IndexType::TRIANGLE);
+		ProceduralShapes::gen_quad_mesh(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+										ProceduralShapes::u16vec2(8, 12), glm::vec2(2.0f));
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
@@ -116,11 +116,12 @@ class PbrApp : public app::Application
 		assert(bgfx::isValid(skybox_prog));
 
 		// textures
-		tex_albedo = io::load_texture_2d("textures/gold_scuffed/albedo.png");
-		tex_roughness = io::load_texture_2d("textures/gold_scuffed/roughness.png");
-		tex_metallic = io::load_texture_2d("textures/gold_scuffed/metallic.png");
-		tex_normal = io::load_texture_2d("textures/gold_scuffed/normal.png");
-		tex_ao = io::load_texture_2d("textures/gold_scuffed/ao.png");
+		std::string model_name = "textures/gray_granite";
+		tex_albedo = io::load_texture_2d(model_name + "/albedo.png");
+		tex_roughness = io::load_texture_2d(model_name + "/roughness.png");
+		tex_metallic = io::load_texture_2d(model_name + "/metallic.png");
+		tex_normal = io::load_texture_2d(model_name + "/normal.png");
+		tex_ao = io::load_texture_2d(model_name + "/ao.png");
 		tex_skybox = io::load_texture_cube({"textures/skybox/right.jpg",
 		 									"textures/skybox/left.jpg",
 		 									"textures/skybox/top.jpg",

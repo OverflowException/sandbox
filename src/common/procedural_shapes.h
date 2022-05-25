@@ -22,6 +22,7 @@ public:
     };
     
     typedef glm::tvec3<uint16_t, glm::highp> u16vec3;
+    typedef glm::tvec2<uint16_t, glm::highp> u16vec2;
     typedef std::vector<glm::vec3> PositionBuffer;
     typedef std::vector<glm::vec3> NormalBuffer;
     typedef std::vector<glm::vec2> UVBuffer;
@@ -57,6 +58,15 @@ public:
                          VertexAttrib attrib,
                          glm::vec3 half_dim,
                          IndexType i_type);
+
+    // in xoy plane, double sided
+    // normals facing   +z / -z direction
+    // tangent pointing +x / -x direction
+    static void gen_quad_mesh(std::vector<float>& vb,
+                              std::vector<uint16_t>& ib,
+                              VertexAttrib attrib,
+                              u16vec2 res,
+                              glm::vec2 half_dim);
     
     
 private:
