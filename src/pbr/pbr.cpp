@@ -8,6 +8,8 @@
 #include "common/pre_computations.h"
 #include "common/procedural_shapes.h"
 #include "controls.hpp"
+#include "cloth.h"
+#include "timer.hpp"
 
 class PbrApp : public app::Application
 {
@@ -30,9 +32,11 @@ class PbrApp : public app::Application
 	};
 
 	// buffers
-	bgfx::VertexBufferHandle sphere_vb;
-	bgfx::IndexBufferHandle sphere_ib;
-	bgfx::VertexBufferHandle skybox_vb;
+	std::vector<float> vb;
+	std::vector<uint16_t> ib;
+	bgfx::DynamicVertexBufferHandle vb_hdl;
+	bgfx::IndexBufferHandle ib_hdl;
+	bgfx::VertexBufferHandle skybox_vb_hdl;
 
 	// shader pograms
 	bgfx::ProgramHandle pbr_prog;
@@ -83,15 +87,24 @@ class PbrApp : public app::Application
 		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_DEPTH_TEST_LEQUAL;
 
+	phy::Cloth cloth;
+	Timer timer;
+
 	void initialize(int argc, char** argv) {
 		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 
-		std::vector<float> vb;
-		std::vector<uint16_t> ib;
-
 		// sphere vertices
+		uint16_t x_res = 32;
+		uint16_t y_res = 32;
 		ProceduralShapes::gen_quad_mesh(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										ProceduralShapes::u16vec2(8, 12), glm::vec2(2.0f));
+										ProceduralShapes::u16vec2(x_res, y_res), glm::vec2(2.0f));
+		
+		// set physics cloth
+		// take +z side only
+		std::vector<float> phy_vb(vb.begin(), vb.begin() + vb.size() / 2);
+		std::vector<uint16_t> phy_ib(ib.begin(), ib.begin() + ib.size() / 2);
+		cloth.init(phy_vb, phy_ib, phy::Cloth::Idx2({y_res + 1u, x_res + 1u}), 11, 0, 6);
+
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
@@ -99,16 +112,17 @@ class PbrApp : public app::Application
 			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
 			.add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
 		.end();
-		sphere_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), v_layout);
-		sphere_ib = bgfx::createIndexBuffer(bgfx::copy(ib.data(), ib.size() * sizeof(uint16_t)));
+		vb_hdl = bgfx::createDynamicVertexBuffer(bgfx::makeRef(vb.data(), vb.size() * sizeof(float)), v_layout);
+		ib_hdl = bgfx::createIndexBuffer(bgfx::makeRef(ib.data(), ib.size() * sizeof(uint16_t)));
 
 		// skybox vertices
-		ProceduralShapes::gen_cube(vb, ProceduralShapes::VertexAttrib::POS, glm::vec3(1.0f, 1.0f, 1.0f), ProceduralShapes::TRIANGLE);
+		std::vector<float> skybox_vb;
+		ProceduralShapes::gen_cube(skybox_vb, ProceduralShapes::VertexAttrib::POS, glm::vec3(1.0f, 1.0f, 1.0f), ProceduralShapes::TRIANGLE);
 		bgfx::VertexLayout skybox_layout;
 		skybox_layout.begin()
 			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
 		.end();
-		skybox_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), skybox_layout);
+		skybox_vb_hdl = bgfx::createVertexBuffer(bgfx::copy(skybox_vb.data(), skybox_vb.size() * sizeof(float)), skybox_layout);
 
 		pbr_prog = io::load_program("shaders/glsl/pbr_vs.bin", "shaders/glsl/pbr_fs.bin");
 		assert(bgfx::isValid(pbr_prog));
@@ -116,7 +130,7 @@ class PbrApp : public app::Application
 		assert(bgfx::isValid(skybox_prog));
 
 		// textures
-		std::string model_name = "textures/gray_granite";
+		std::string model_name = "textures/old_fabric";
 		tex_albedo = io::load_texture_2d(model_name + "/albedo.png");
 		tex_roughness = io::load_texture_2d(model_name + "/roughness.png");
 		tex_metallic = io::load_texture_2d(model_name + "/metallic.png");
@@ -162,12 +176,13 @@ class PbrApp : public app::Application
 							0);
 		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
 		bgfx::setViewFrameBuffer(opaque_id, BGFX_INVALID_HANDLE); // set default back buffer. To counteract irradiance map's framebuffer settings
+		timer.start();
 	}
 
 	int shutdown() {
-		bgfx::destroy(sphere_vb);
-		bgfx::destroy(sphere_ib);
-		bgfx::destroy(skybox_vb);
+		bgfx::destroy(vb_hdl);
+		bgfx::destroy(ib_hdl);
+		bgfx::destroy(skybox_vb_hdl);
 		bgfx::destroy(pbr_prog);
 		bgfx::destroy(skybox_prog);
 		bgfx::destroy(tex_albedo);
@@ -268,8 +283,16 @@ class PbrApp : public app::Application
 		bgfx::setTexture(5, s_skybox_irr, tex_skybox_irr);
 		bgfx::setTexture(6, s_skybox_prefilter, tex_skybox_prefilter);
 		bgfx::setTexture(7, s_brdf_lut, tex_brdf_lut);
-		bgfx::setVertexBuffer(0, sphere_vb);
-		bgfx::setIndexBuffer(sphere_ib);
+
+		// update physics
+		cloth.update(timer.current());
+		// copy both sides
+		cloth.copy_back(vb.begin(), 11, 0, 3, 8);
+		cloth.copy_back(vb.begin() + vb.size() / 2, 11, 0, 3, 8, true, true);
+
+		bgfx::update(vb_hdl, 0, bgfx::makeRef(vb.data(), vb.size() * sizeof(float)));
+		bgfx::setVertexBuffer(0, vb_hdl);
+		bgfx::setIndexBuffer(ib_hdl);
 		bgfx::setState(opaque_state);
 		bgfx::submit(opaque_id, pbr_prog);
 
@@ -280,7 +303,7 @@ class PbrApp : public app::Application
 		// bgfx::setTexture(0, s_skybox, tex_skybox);
 		// bgfx::setTexture(0, s_skybox, tex_skybox_irr);
 		bgfx::setTexture(0, s_skybox, tex_skybox);
-		bgfx::setVertexBuffer(0, skybox_vb);
+		bgfx::setVertexBuffer(0, skybox_vb_hdl);
 		bgfx::setState(skybox_state);
 		bgfx::submit(skybox_id, skybox_prog);
 
