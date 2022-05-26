@@ -89,6 +89,7 @@ class PbrApp : public app::Application
 
 	phy::Cloth cloth;
 	Timer timer;
+	std::vector<glm::vec3> kinematic_pos;
 
 	void initialize(int argc, char** argv) {
 		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
@@ -96,14 +97,25 @@ class PbrApp : public app::Application
 		// sphere vertices
 		uint16_t x_res = 32;
 		uint16_t y_res = 32;
+		float x_half_dim = 2.0f;
+		float y_half_dim = 2.0f;
 		ProceduralShapes::gen_quad_mesh(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										ProceduralShapes::u16vec2(x_res, y_res), glm::vec2(2.0f));
+										ProceduralShapes::u16vec2(x_res, y_res), glm::vec2(x_half_dim, y_half_dim));
 		
 		// set physics cloth
 		// take +z side only
 		std::vector<float> phy_vb(vb.begin(), vb.begin() + vb.size() / 2);
 		std::vector<uint16_t> phy_ib(ib.begin(), ib.begin() + ib.size() / 2);
-		cloth.init(phy_vb, phy_ib, phy::Cloth::Idx2({y_res + 1u, x_res + 1u}), 11, 0, 6);
+		// set first row to kinematics
+		std::vector<uint16_t> kinematic_ids;
+		for (uint16_t col = 0; col < x_res + 1; ++col) {
+			kinematic_ids.push_back(col);
+			glm::vec3 pos(-x_half_dim + 2.0f * x_half_dim / x_res * col,
+						  y_half_dim,
+						  0.0f);
+			kinematic_pos.push_back(pos);
+		}
+		cloth.init(phy_vb, phy_ib, kinematic_ids, phy::Cloth::Idx2({y_res + 1u, x_res + 1u}), 11, 0, 6);
 
 		bgfx::VertexLayout v_layout;
 		v_layout.begin()
@@ -247,6 +259,17 @@ class PbrApp : public app::Application
 		float mra[3] = {Ctrl::metallic, Ctrl::roughness, Ctrl::ao};
 		bgfx::setUniform(u_metallic_roughness_ao, mra);
 
+		Ctrl::kinematics_control();
+		// rotation order: z-y-x
+		glm::mat4 k_mat(1.0f);
+		k_mat = glm::rotate(k_mat, float(Ctrl::kinematics_euler.z), glm::vec3(0.0f, 0.0f, 1.0f));
+		k_mat = glm::rotate(k_mat, float(Ctrl::kinematics_euler.y), glm::vec3(0.0f, 1.0f, 0.0f));
+		k_mat = glm::rotate(k_mat, float(Ctrl::kinematics_euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
+		std::vector<glm::vec3> cur_kinematic_pos = kinematic_pos;
+		for (auto& p : cur_kinematic_pos) {
+			p = glm::vec3(k_mat * glm::vec4(p, 1.0f));
+		}
+
 		// light control
 		// TODO: lighting position computation is not correct
 		glm::vec4 view_light_pos[light_count];
@@ -285,7 +308,8 @@ class PbrApp : public app::Application
 		bgfx::setTexture(7, s_brdf_lut, tex_brdf_lut);
 
 		// update physics
-		cloth.update(timer.current());
+		cloth.update_kinematics(cur_kinematic_pos);
+		cloth.update(0.008);
 		// copy both sides
 		cloth.copy_back(vb.begin(), 11, 0, 3, 8);
 		cloth.copy_back(vb.begin() + vb.size() / 2, 11, 0, 3, 8, true, true);

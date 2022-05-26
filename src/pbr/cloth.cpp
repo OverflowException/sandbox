@@ -6,32 +6,18 @@ namespace phy {
 
 void Cloth::init(const Arr1D<float>& vb,
                  const Arr1D<uint16_t>& ib,
+                 const Arr1D<uint16_t>& kinematic_ids,
                  Idx2 dims, // rows vs columns
                  size_t vertex_stride,
                  size_t pos_offset,
                  size_t tex_offset) {
-    _dims = dims;
-    // _construct _normal_buf
-    _normal_buf.resize(dims[0]);
-    for (auto& row : _normal_buf) {
-        row.resize(dims[1], glm::vec3(0.0f));
-    }
-    // _construct _tangent_buf
-    _tangent_buf.resize(dims[0]);
-    for (auto& row : _tangent_buf) {
-        row.resize(dims[1], glm::vec3(0.0f));
-    }
-
-    // TODO: construct constraints
-    
-
     // construct position buffer
+    Idx2 i;
     state.pos.resize(dims[0]);
     for (auto& row : state.pos) {
         row.resize(dims[1], glm::vec3(0.0f));
     }
 
-    Idx2 i;
     for (i[0] = 0; i[0] < dims[0]; ++i[0]) {
         for (i[1] = 0; i[1] < dims[1]; ++i[1]) {
             size_t vi = (i[1] + i[0] * dims[1]) * vertex_stride + pos_offset;
@@ -84,20 +70,125 @@ void Cloth::init(const Arr1D<float>& vb,
         row.resize(dims[1], glm::vec3(0.0f));
     }
 
-    // TODO: construct kinematic ids
-    // TODO: no cross constraints for the moment
-}
-
-void Cloth::update(float dt) {
-    Idx2 i;
-    for (i[0] = 0; i[0] < _dims[0]; ++i[0]) {
-        for(i[1] = 0; i[1] < _dims[1]; ++i[1]) {
-            float amp = 0.4f * glm::sin(dt + (i[0] * i[0] + i[1] * i[1]) * 0.01f);
-            state.pos[i].z = amp;
+    for (i[0] = 0; i[0] < dims[0]; ++i[0]) {
+        for (i[1] = 0; i[1] < dims[1]; ++i[1]) {
+            size_t vi = (i[1] + i[0] * dims[1]) * vertex_stride + pos_offset;
+            state.prev_pos[i] = glm::vec3(vb[vi], vb[vi + 1], vb[vi + 2]);
         }
     }
 
+    _dims = dims;
+    // _construct _normal_buf
+    _normal_buf.resize(dims[0]);
+    for (auto& row : _normal_buf) {
+        row.resize(dims[1], glm::vec3(0.0f));
+    }
+
+    // _construct _tangent_buf
+    _tangent_buf.resize(dims[0]);
+    for (auto& row : _tangent_buf) {
+        row.resize(dims[1], glm::vec3(0.0f));
+    }
+
+    // TODO: no cross constraints for the moment
+    // assuming order of constraint does not affect simulation
+    // populate index buffer
+    //
+    //             rest_len_h
+    //              00 --10
+    //  rest_len_v  | \ / |
+    //              |  \  |
+    //              | / \ |
+    //              01 --11
+    for (i[0] = 0; i[0] < dims[0] - 1; ++i[0]) {
+        for (i[1] = 0; i[1] < dims[1] - 1; ++i[1]) {
+            Idx2 i00 = i;
+            Idx2 i10 = {i[0]    , i[1] + 1};
+            Idx2 i01 = {i[0] + 1, i[1]    };
+            Idx2 i11 = {i[0] + 1, i[1] + 1};
+            float len_h = glm::length(state.pos[i00] - state.pos[i10]);
+            float len_v = glm::length(state.pos[i00] - state.pos[i01]);
+            float len_diag0 = glm::length(state.pos[i00] - state.pos[i11]);
+            float len_diag1 = glm::length(state.pos[i01] - state.pos[i10]);
+            _constraints.push_back({i00, i10, len_h});
+            _constraints.push_back({i00, i01, len_v});
+            _constraints.push_back({i00, i11, len_diag0});
+            _constraints.push_back({i01, i10, len_diag1});
+        }
+    }
+    // right edge
+    i[1] = dims[1] - 1;
+    for (i[0] = 0; i[0] < dims[0] - 1; ++i[0]) {
+        Idx2 i00 = i;
+        Idx2 i01 = {i[0] + 1, i[1]};
+        float rest_len_v = glm::length(state.pos[i00] - state.pos[i01]);
+        _constraints.push_back({i, i01, rest_len_v});
+    }
+    // bottom edge
+    i[0] = dims[0] - 1;
+    for (i[1] = 0; i[1] < dims[1] - 1; ++i[1]) {
+        Idx2 i00 = i;
+        Idx2 i10 = {i[0], i[1] + 1};
+        float rest_len_h = glm::length(state.pos[i00] - state.pos[i10]);
+        _constraints.push_back({i, i10, rest_len_h});
+    }
+
+    // construct kinematic ids
+    for (uint16_t iv : kinematic_ids) {
+        i = {iv / dims[1], iv % dims[1]};
+        state.kinematic_ids.push_back(i);
+    }
+}
+
+void Cloth::update_kinematics(const Arr1D<glm::vec3>& k_pos) {
+    state.kinematic_pos = k_pos;
+}
+
+void Cloth::update(float dt) {
+    verlet(dt);
+    apply_constraint();
     compute_tangent_norm();
+}
+
+void Cloth::verlet(float dt) {
+    // TODO: only gravity at this moment, add other accelerations
+    Idx2 i;
+    for (i[0] = 0; i[0] < _dims[0]; ++i[0]) {
+        for (i[1] = 0; i[1] < _dims[1]; ++i[1]) {
+            glm::vec3 cur_pos = state.pos[i];
+            state.pos[i] += state.pos[i] - state.prev_pos[i] + state.gravity * dt * dt;
+            state.prev_pos[i] = cur_pos;
+        }
+    }
+}
+
+void Cloth::apply_constraint() {
+    const int iterations = 10;
+    for (int iter = 0; iter < iterations; ++iter) {
+        // traverse constraints
+        for (auto&c : _constraints) {
+            glm::vec3& p0 = state.pos[c.i0];
+            glm::vec3& p1 = state.pos[c.i1];
+            glm::vec3 l01 = p1 - p0;
+            // TODO: square root is very expensive
+            float len = glm::length(l01);
+            float diff = (len - c.rest_len) / len;
+            p0 += l01 * diff * 0.5f;
+            p1 -= l01 * diff * 0.5f;
+        }
+
+
+        // maintain kinematics vertices
+        for (size_t ii = 0; ii < state.kinematic_ids.size(); ++ii) {
+            state.pos[state.kinematic_ids[ii]] = state.kinematic_pos[ii];
+        }
+        // TODO: anchor upper-left and upper-right points, for the moment.
+        // Add kinematic points later
+        // Idx2 i_ul = {0, 0};
+        // Idx2 i_ur = {0, _dims[1] - 1};
+        // state.pos[i_ul] = glm::vec3(-2.0f, 2.0f, 0.0f);
+        // state.pos[i_ur] = glm::vec3( 2.0f, 2.0f, 0.0f);
+    }
 }
 
 void Cloth::copy_back(Arr1D<float>::iterator vb_beg,

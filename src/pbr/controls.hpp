@@ -98,6 +98,16 @@ public:
 		ImGui::SliderFloat("ao", &ao, 0.0f, 1.0f);
 		ImGui::End();
 	}
+
+	// kinematics points control
+	static glm::vec3 kinematics_euler;
+    static void kinematics_control() {
+        ImGui::Begin("kinematics");
+	    ImGui::SliderAngle("x rotation", &kinematics_euler.x, -180.0f, 180.0f);
+	    ImGui::SliderAngle("y rotation", &kinematics_euler.y, -180.0f, 180.0f);
+	    ImGui::SliderAngle("z rotation", &kinematics_euler.z, -180.0f, 180.0f);
+	    ImGui::End();
+    }
 };
 
 glm::vec3 Ctrl::model_euler = glm::vec3(0.0f, 0.0f, 0.0f);
@@ -111,3 +121,5 @@ ImVec4 Ctrl::albedo   = ImVec4(0.5f, 0.5f, 0.5f, 0.5f);
 float Ctrl::metallic  = 0.5f;
 float Ctrl::roughness = 0.5f;
 float Ctrl::ao        = 1.0f;
+
+glm::vec3 Ctrl::kinematics_euler = glm::vec3(0.0f, 0.0f, 0.0f);

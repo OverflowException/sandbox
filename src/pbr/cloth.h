@@ -25,8 +25,6 @@ public:
 
     template<typename T>
     using Arr1D = std::vector<T>;
-    
-    using Constraints = std::pair<size_t, size_t>;
 
     // TODO: add mass
     // TODO: add physical parameters
@@ -39,6 +37,7 @@ public:
         glm::vec3           gravity = glm::vec3(0.0f, -10.0f, 0.0f);
 
         // re-computed every step
+        Arr1D<glm::vec3>    kinematic_pos;
         Arr2D<glm::vec3>    norm;
         Arr2D<glm::vec3>    tangent;
         Arr2D<glm::vec3>    prev_pos;
@@ -48,12 +47,15 @@ public:
 
     void init(const Arr1D<float>& vb,
               const Arr1D<uint16_t>& ib,
+              const Arr1D<uint16_t>& kinematic_ids,
               Idx2 dims, // rows vs columns
               size_t vertex_stride,
               size_t pos_offset,
               size_t tex_offset);
 
-    // in milliseconds
+    void update_kinematics(const Arr1D<glm::vec3>& k_pos);
+
+    // in seconds
     void update(float dt);
 
     void copy_back(Arr1D<float>::iterator vb_beg,
@@ -67,6 +69,10 @@ public:
 private:
     void compute_tangent_norm();
 
+    void verlet(float dt);
+
+    void apply_constraint();
+
     template<typename T>
     void clear_arr2d(Arr2D<T>& arr) {
         for (auto& row : arr) {
@@ -74,13 +80,13 @@ private:
         }
     }
     
-    struct Particle {
-        glm::vec3 cur_pos;
-        glm::vec3 prev_pos;
-        glm::vec3 acc;
+    struct Constraint {
+        Idx2 i0;
+        Idx2 i1;
+        float rest_len;
     };
 
-    Arr1D<Constraints> _constraints;
+    Arr1D<Constraint> _constraints;
     // Arr2D<glm::mat2> _uv_inverse_mat;
     Arr2D<glm::vec3> _normal_buf;
     Arr2D<glm::vec3> _tangent_buf;
