@@ -12,9 +12,9 @@ TODO:
 1. brdf lut behaves weirdly. There's a little round artifact in the middle when rendering surfaces with low roughness
 2. add mipmapping feature to IBL prefiltering. To solve the problem of dotty bright area in envronment map
 3. HDR tonemapping pass in a separate pass. object + skybox
-4. fix kinematic anchor points
 
 Document:
 1. generate vertex tangent attribute on sphere
 2. icosphere seam
 3. brdf lut border clamping
+4. the w component of tangent. Why do I need it, how do shaders interpret this parameter. How to deal with symmetric uv.

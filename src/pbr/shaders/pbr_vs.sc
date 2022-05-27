@@ -16,7 +16,8 @@ void main() {
     v_frag_pos = vec3(u_modelView * vec4(a_position, 1.0f));
     v_frag_norm = vec3(u_view * u_model_inv_t * vec4(a_normal, 0.0f));
     v_texcoord0 = a_texcoord0;
-    v_tangent = vec3(u_modelView * vec4(a_tangent, 0.0f));
+    // transform tangent while saving the directional flag w
+    v_tangent = vec4(vec3(u_modelView * vec4(a_tangent.xyz, 0.0f)), a_tangent.w);
 
     gl_Position = u_modelViewProj * vec4(a_position, 1.0);
 }

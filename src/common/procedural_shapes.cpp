@@ -15,9 +15,7 @@ void ProceduralShapes::gen_quad_mesh(std::vector<float>& vb,
                                      glm::vec2 half_dim) {
     assert((int)res.x * (int)res.y < (int)std::numeric_limits<uint16_t>::max());
     PositionBuffer vec3_pb;
-    NormalBuffer vec3_nb;
     UVBuffer vec2_uv;
-    TangentBuffer vec3_tb;
     IndexBuffer vec3_ib;
 
     // populate position and uv buffers
@@ -25,7 +23,7 @@ void ProceduralShapes::gen_quad_mesh(std::vector<float>& vb,
     glm::vec2 pos_step = half_dim * glm::vec2(2.0f) * uv_step;
     for (int row = 0; row <= res.y; ++row) {
         for (int col = 0; col <= res.x; ++col) {
-            // upper-left corder as origin, to accomodate uv
+            // upper-left corner as position & uv origin
             vec3_pb.emplace_back(-half_dim.x + pos_step.x * col,
                                   half_dim.y - pos_step.y * row,
                                   0.0f);
@@ -64,11 +62,10 @@ void ProceduralShapes::gen_quad_mesh(std::vector<float>& vb,
             vb.insert(vb.end(), {0.0f, 0.0f, 1.0f});
         }
         if (attrib & VertexAttrib::UV) {
-            // 4x repeated on u, 2x repeated on v
             vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
         }
         if (attrib & VertexAttrib::TANGENT) {
-            vb.insert(vb.end(), {1.0f, 0.0f, 0.0f});
+            vb.insert(vb.end(), {1.0f, 0.0f, 0.0f, -1.0f});
         }
     }
     // -z face
@@ -80,11 +77,10 @@ void ProceduralShapes::gen_quad_mesh(std::vector<float>& vb,
             vb.insert(vb.end(), {0.0f, 0.0f, -1.0f});
         }
         if (attrib & VertexAttrib::UV) {
-            // 4x repeated on u, 2x repeated on v
             vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
         }
         if (attrib & VertexAttrib::TANGENT) {
-            vb.insert(vb.end(), {-1.0f, 0.0f, 0.0f});
+            vb.insert(vb.end(), {1.0f, 0.0f, 0.0f, 1.0f});
         }
     }
 
@@ -112,7 +108,7 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
     PositionBuffer vec3_pb;
     NormalBuffer vec3_nb;
     UVBuffer vec2_uv;
-    TangentBuffer vec3_tb;
+    TangentBuffer vec4_tb;
     IndexBuffer vec3_ib;
     
     //generate position buffer and index buffer
@@ -226,7 +222,7 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
                                             glm::vec3(0.0f, 0.0f, 1.0f));
 
             glm::vec3 t = glm::rotate(t_rot, t0);
-            vec3_tb.push_back(t);
+            vec4_tb.push_back(glm::vec4(t, 1.0f));
         }
     }
 
@@ -280,7 +276,7 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
             vb.insert(vb.end(), {vec2_uv[i].x * 4.0f, vec2_uv[i].y * 2.0f});
         }
         if (attrib & VertexAttrib::TANGENT) {
-            vb.insert(vb.end(), {vec3_tb[i].x, vec3_tb[i].y, vec3_tb[i].z});
+            vb.insert(vb.end(), {vec4_tb[i].x, vec4_tb[i].y, vec4_tb[i].z, vec4_tb[i].w});
         }
     }
 

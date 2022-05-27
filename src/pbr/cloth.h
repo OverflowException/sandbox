@@ -63,8 +63,8 @@ public:
                    size_t pos_offset,
                    size_t norm_offset,
                    size_t tangent_offset,
-                   bool reverse_norm = false,
-                   bool reverse_tangent = false);
+                   bool inverse_norm,
+                   bool inverse_bitangent);
 
 private:
     void compute_tangent_norm();
@@ -74,9 +74,9 @@ private:
     void apply_constraint();
 
     template<typename T>
-    void clear_arr2d(Arr2D<T>& arr) {
+    void zero_arr2d(Arr2D<T>& arr) {
         for (auto& row : arr) {
-            row.resize(row.size(), T(0.0f));
+            row.assign(row.size(), T(0));
         }
     }
     

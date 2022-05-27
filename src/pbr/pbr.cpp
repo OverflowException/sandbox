@@ -32,6 +32,7 @@ class PbrApp : public app::Application
 	};
 
 	// buffers
+	bgfx::VertexLayout v_layout;
 	std::vector<float> vb;
 	std::vector<uint16_t> ib;
 	bgfx::DynamicVertexBufferHandle vb_hdl;
@@ -102,6 +103,15 @@ class PbrApp : public app::Application
 		ProceduralShapes::gen_quad_mesh(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
 										ProceduralShapes::u16vec2(x_res, y_res), glm::vec2(x_half_dim, y_half_dim));
 		
+		v_layout.begin()
+			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
+			.add(bgfx::Attrib::Tangent, 4, bgfx::AttribType::Float)
+		.end();
+		vb_hdl = bgfx::createDynamicVertexBuffer(bgfx::makeRef(vb.data(), vb.size() * sizeof(float)), v_layout);
+		ib_hdl = bgfx::createIndexBuffer(bgfx::makeRef(ib.data(), ib.size() * sizeof(uint16_t)));
+
 		// set physics cloth
 		// take +z side only
 		std::vector<float> phy_vb(vb.begin(), vb.begin() + vb.size() / 2);
@@ -115,17 +125,13 @@ class PbrApp : public app::Application
 						  0.0f);
 			kinematic_pos.push_back(pos);
 		}
-		cloth.init(phy_vb, phy_ib, kinematic_ids, phy::Cloth::Idx2({y_res + 1u, x_res + 1u}), 11, 0, 6);
-
-		bgfx::VertexLayout v_layout;
-		v_layout.begin()
-			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
-		.end();
-		vb_hdl = bgfx::createDynamicVertexBuffer(bgfx::makeRef(vb.data(), vb.size() * sizeof(float)), v_layout);
-		ib_hdl = bgfx::createIndexBuffer(bgfx::makeRef(ib.data(), ib.size() * sizeof(uint16_t)));
+		cloth.init(phy_vb,
+				   phy_ib,
+				   kinematic_ids,
+				   phy::Cloth::Idx2({y_res + 1u, x_res + 1u}),
+				   v_layout.getStride(),
+				   v_layout.getOffset(bgfx::Attrib::Position),
+				   v_layout.getOffset(bgfx::Attrib::TexCoord0));
 
 		// skybox vertices
 		std::vector<float> skybox_vb;
@@ -142,7 +148,7 @@ class PbrApp : public app::Application
 		assert(bgfx::isValid(skybox_prog));
 
 		// textures
-		std::string model_name = "textures/old_fabric";
+		std::string model_name = "textures/metal_grid";
 		tex_albedo = io::load_texture_2d(model_name + "/albedo.png");
 		tex_roughness = io::load_texture_2d(model_name + "/roughness.png");
 		tex_metallic = io::load_texture_2d(model_name + "/metallic.png");
@@ -311,8 +317,18 @@ class PbrApp : public app::Application
 		cloth.update_kinematics(cur_kinematic_pos);
 		cloth.update(0.008);
 		// copy both sides
-		cloth.copy_back(vb.begin(), 11, 0, 3, 8);
-		cloth.copy_back(vb.begin() + vb.size() / 2, 11, 0, 3, 8, true, true);
+		cloth.copy_back(vb.begin(),
+						v_layout.getStride(),
+						v_layout.getOffset(bgfx::Attrib::Position),
+						v_layout.getOffset(bgfx::Attrib::Normal),
+						v_layout.getOffset(bgfx::Attrib::Tangent),
+						false, true);
+		cloth.copy_back(vb.begin() + vb.size() / 2,
+						v_layout.getStride(),
+						v_layout.getOffset(bgfx::Attrib::Position),
+						v_layout.getOffset(bgfx::Attrib::Normal),
+						v_layout.getOffset(bgfx::Attrib::Tangent),
+						true, false);
 
 		bgfx::update(vb_hdl, 0, bgfx::makeRef(vb.data(), vb.size() * sizeof(float)));
 		bgfx::setVertexBuffer(0, vb_hdl);

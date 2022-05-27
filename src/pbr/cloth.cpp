@@ -11,6 +11,10 @@ void Cloth::init(const Arr1D<float>& vb,
                  size_t vertex_stride,
                  size_t pos_offset,
                  size_t tex_offset) {
+    vertex_stride /= sizeof(float);
+    pos_offset /= sizeof(float);
+    tex_offset /= sizeof(float);
+
     // construct position buffer
     Idx2 i;
     state.pos.resize(dims[0]);
@@ -90,7 +94,6 @@ void Cloth::init(const Arr1D<float>& vb,
         row.resize(dims[1], glm::vec3(0.0f));
     }
 
-    // TODO: no cross constraints for the moment
     // assuming order of constraint does not affect simulation
     // populate index buffer
     //
@@ -196,8 +199,13 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
                       size_t pos_offset,
                       size_t norm_offset,
                       size_t tangent_offset,
-                      bool reverse_norm,
-                      bool reverse_tangent) {
+                      bool inverse_norm,
+                      bool inverse_bitangent) {
+    vertex_stride /= sizeof(float);
+    pos_offset /= sizeof(float);
+    norm_offset /= sizeof(float);
+    tangent_offset /= sizeof(float);
+
     // Copy attributes
     Idx2 i;
     size_t vb_offset = 0;
@@ -215,7 +223,7 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
             memcpy(&*(attrib_iter),
                    &state.norm[i],
                    sizeof(float) * 3);
-            if (reverse_norm) {
+            if (inverse_norm) {
                 *(attrib_iter) = -*(attrib_iter);
                 *(attrib_iter + 1) = -*(attrib_iter + 1);
                 *(attrib_iter + 2) = -*(attrib_iter + 2);
@@ -226,11 +234,7 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
             memcpy(&*(attrib_iter),
                    &state.tangent[i],
                    sizeof(float) * 3);
-            if (reverse_tangent) {
-                *(attrib_iter) = -*(attrib_iter);
-                *(attrib_iter + 1) = -*(attrib_iter + 1);
-                *(attrib_iter + 2) = -*(attrib_iter + 2);
-            }
+            *(attrib_iter + 3) = inverse_bitangent ? -1.0f : 1.0f;
 
             vb_offset += vertex_stride;
         }
@@ -239,8 +243,8 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
 
 void Cloth::compute_tangent_norm() {
     // TODO: judging from renderdoc, values of normal and tangent does not seem right
-    clear_arr2d(_normal_buf);
-    clear_arr2d(_tangent_buf);
+    zero_arr2d(_normal_buf);
+    zero_arr2d(_tangent_buf);
     auto& pos = state.pos;
     auto& tex = state.tex;
 
@@ -251,7 +255,7 @@ void Cloth::compute_tangent_norm() {
         glm::vec3& pos2 = pos[i[2]];
 
         glm::vec3 e1 = pos1 - pos0;
-        glm::vec3 e2 = pos2 - pos1;
+        glm::vec3 e2 = pos2 - pos0;
         glm::vec3 norm = glm::cross(e1, e2);
 
         _normal_buf[i[0]] += norm;
@@ -270,7 +274,7 @@ void Cloth::compute_tangent_norm() {
         glm::vec2& tex2 = tex[i[2]];
 
         glm::vec3 e1 = pos1 - pos0;
-        glm::vec3 e2 = pos2 - pos1;
+        glm::vec3 e2 = pos2 - pos0;
         glm::vec2 uv1 = tex1 - tex0;
         glm::vec2 uv2 = tex2 - tex0;
 
@@ -291,10 +295,9 @@ void Cloth::compute_tangent_norm() {
             glm::vec3& n_sum = _normal_buf[i];
             glm::vec3& t_sum = _tangent_buf[i];
 
-            state.tangent[i] = t_sum - n_sum * glm::dot(n_sum, t_sum);
-            state.tangent[i] = glm::normalize(state.tangent[i]);
-
             state.norm[i] = glm::normalize(n_sum);
+            state.tangent[i] = t_sum - state.norm[i] * glm::dot(state.norm[i], t_sum);
+            state.tangent[i] = glm::normalize(state.tangent[i]);
         }
     }
 

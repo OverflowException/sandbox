@@ -29,12 +29,12 @@ vec3 fresnelSchlick(float cos, vec3 f0);
 vec3 fresnelSchlickRoughness(float cos, vec3 f0, float roughness);
 vec3 compute_normal();
 
-vec3 compute_normal(vec3 norm, vec3 tangent, vec2 coord) {
-    vec3 bitangent = cross(norm, tangent);
+vec3 compute_normal(vec3 norm, vec4 tangent, vec2 coord) {
+    vec3 bitangent = cross(norm, tangent.xyz) * vec3(tangent.w);
 
     // tangent, bitangent, normal coordinates
     vec3 tbn = vec3(texture2D(s_normal, coord)) * 2.0 - 1.0;
-    return normalize(tangent * tbn.x + bitangent * tbn.y + norm * tbn.z);
+    return normalize(tangent.xyz * tbn.x + bitangent * tbn.y + norm * tbn.z);
 }
 
 // for vectors
