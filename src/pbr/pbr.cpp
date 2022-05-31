@@ -96,8 +96,8 @@ class PbrApp : public app::Application
 		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 
 		// sphere vertices
-		uint16_t x_res = 32;
-		uint16_t y_res = 32;
+		uint16_t x_res = 16;
+		uint16_t y_res = 16;
 		float x_half_dim = 2.0f;
 		float y_half_dim = 2.0f;
 		ProceduralShapes::gen_quad_mesh(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
