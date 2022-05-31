@@ -41,6 +41,7 @@ public:
         Arr2D<glm::vec3>    norm;
         Arr2D<glm::vec3>    tangent;
         Arr2D<glm::vec3>    prev_pos;
+        Arr2D<glm::vec3>    delta_pos;
     };
 
     State state;
@@ -73,6 +74,8 @@ private:
 
     void apply_constraint();
 
+    void self_collision_p2p_test();
+
     template<typename T>
     void zero_arr2d(Arr2D<T>& arr) {
         for (auto& row : arr) {
@@ -86,11 +89,22 @@ private:
         float rest_len;
     };
 
+    struct CollisionP2PManifold {
+        Idx2 i0;
+        Idx2 i1;
+        glm::vec3 n;
+    };
+
     Arr1D<Constraint> _constraints;
+    Arr1D<CollisionP2PManifold> _p2p_manifolds;
     // Arr2D<glm::mat2> _uv_inverse_mat;
     Arr2D<glm::vec3> _normal_buf;
     Arr2D<glm::vec3> _tangent_buf;
     Idx2 _dims;
+
+    // TODO: temporary, for point to point collision
+    const float _r_sc = 0.24f; // static collision radius, faster the object, larger the static radius
+    const float _r = 0.12f;    // particle radius
 };
 
 }

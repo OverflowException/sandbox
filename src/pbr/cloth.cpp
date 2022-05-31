@@ -1,6 +1,8 @@
 #include "cloth.h"
+#include "geometry.h"
 #include "glm/trigonometric.hpp"
 #include <cstring>
+#include <iostream>
 
 namespace phy {
 
@@ -81,6 +83,12 @@ void Cloth::init(const Arr1D<float>& vb,
         }
     }
 
+    // construct delta_pos buffer
+    state.delta_pos.resize(dims[0]);
+    for (auto& row : state.delta_pos) {
+        row.resize(dims[1], glm::vec3(0.0f));
+    }
+
     _dims = dims;
     // _construct _normal_buf
     _normal_buf.resize(dims[0]);
@@ -149,8 +157,8 @@ void Cloth::update_kinematics(const Arr1D<glm::vec3>& k_pos) {
 
 void Cloth::update(float dt) {
     verlet(dt);
+    self_collision_p2p_test();
     apply_constraint();
-    compute_tangent_norm();
 }
 
 void Cloth::verlet(float dt) {
@@ -161,14 +169,17 @@ void Cloth::verlet(float dt) {
             glm::vec3 cur_pos = state.pos[i];
             state.pos[i] += state.pos[i] - state.prev_pos[i] + state.gravity * dt * dt;
             state.prev_pos[i] = cur_pos;
+            state.delta_pos[i] = state.pos[i] - state.prev_pos[i];
         }
     }
 }
 
 void Cloth::apply_constraint() {
     const int iterations = 10;
+    std::cout << "manifold count = " << _p2p_manifolds.size() << std::endl;
     for (int iter = 0; iter < iterations; ++iter) {
         // traverse constraints
+        // structural constraints
         for (auto&c : _constraints) {
             glm::vec3& p0 = state.pos[c.i0];
             glm::vec3& p1 = state.pos[c.i1];
@@ -179,19 +190,68 @@ void Cloth::apply_constraint() {
             p0 += l01 * diff * 0.5f;
             p1 -= l01 * diff * 0.5f;
         }
+        // p2p collision constraints
+        for (auto&m : _p2p_manifolds) {
+            glm::vec3& p0 = state.pos[m.i0];
+            glm::vec3& p1 = state.pos[m.i1];
+            glm::vec3 e = p1 - p0;
+            float proj = glm::dot(e, m.n);
+            if (proj < 2 * _r) {
+                // TODO: resolve collision
+                float diff = 2 * _r - proj;
+                p0 -= m.n * diff * 0.5f;
+                p1 += m.n * diff * 0.5f;
+            }
+        }
 
 
         // maintain kinematics vertices
         for (size_t ii = 0; ii < state.kinematic_ids.size(); ++ii) {
             state.pos[state.kinematic_ids[ii]] = state.kinematic_pos[ii];
         }
-        // TODO: anchor upper-left and upper-right points, for the moment.
-        // Add kinematic points later
-        // Idx2 i_ul = {0, 0};
-        // Idx2 i_ur = {0, _dims[1] - 1};
-        // state.pos[i_ul] = glm::vec3(-2.0f, 2.0f, 0.0f);
-        // state.pos[i_ur] = glm::vec3( 2.0f, 2.0f, 0.0f);
     }
+}
+
+void Cloth::self_collision_p2p_test() {
+    _p2p_manifolds.clear();
+
+    size_t total_collision_checks = 0;
+    size_t broad_phase_intersect = 0;
+    size_t narrow_phase_collide = 0;
+
+    Idx2 i;
+    // traverse all vertices
+    for (i[0] = 0; i[0] < _dims[0]; ++i[0]) {
+        for (i[1] = 0; i[1] < _dims[1]; ++i[1]) {
+            // traverse all vertices after current vertex
+            size_t j = i[0] * _dims[1] + i[1] + 1;
+            for (; j < _dims[0] * _dims[1]; ++j) {
+                Idx2 k = {j / _dims[1], j % _dims[1]};
+                ++total_collision_checks;
+                // predictive collision
+                Geometry::LineSeg seg0 = {state.pos[i], 
+                                          state.pos[i] + state.delta_pos[i]};
+                Geometry::LineSeg seg1 = {state.pos[k], 
+                                          state.pos[k] + state.delta_pos[k]};
+                Geometry::AABB aabb0 = Geometry::aabb(seg0, _r + _r_sc);
+                Geometry::AABB aabb1 = Geometry::aabb(seg1, _r + _r_sc);
+                // TODO: mock broad phase
+                if (!Geometry::intersect(aabb0, aabb1)) {
+                    continue;
+                }
+                ++broad_phase_intersect;
+                float d = Geometry::distance(seg0, seg1);
+                if (d <= 2 * _r + _r_sc) {
+                    ++narrow_phase_collide;
+                    _p2p_manifolds.push_back({i, k, glm::normalize(state.pos[k] - state.pos[i])});
+                }
+            }
+        }
+    }
+
+    std::cout << "total collision checks = " << total_collision_checks << std::endl;
+    std::cout << "broad phase intersect = " << broad_phase_intersect << std::endl;
+    std::cout << "narrow phase collide = " << narrow_phase_collide << std::endl;
 }
 
 void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
@@ -201,6 +261,8 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
                       size_t tangent_offset,
                       bool inverse_norm,
                       bool inverse_bitangent) {
+    compute_tangent_norm();
+
     vertex_stride /= sizeof(float);
     pos_offset /= sizeof(float);
     norm_offset /= sizeof(float);
@@ -242,7 +304,6 @@ void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
 }
 
 void Cloth::compute_tangent_norm() {
-    // TODO: judging from renderdoc, values of normal and tangent does not seem right
     zero_arr2d(_normal_buf);
     zero_arr2d(_tangent_buf);
     auto& pos = state.pos;
