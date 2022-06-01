@@ -83,12 +83,6 @@ void Cloth::init(const Arr1D<float>& vb,
         }
     }
 
-    // construct delta_pos buffer
-    state.delta_pos.resize(dims[0]);
-    for (auto& row : state.delta_pos) {
-        row.resize(dims[1], glm::vec3(0.0f));
-    }
-
     _dims = dims;
     // _construct _normal_buf
     _normal_buf.resize(dims[0]);
@@ -169,14 +163,13 @@ void Cloth::verlet(float dt) {
             glm::vec3 cur_pos = state.pos[i];
             state.pos[i] += state.pos[i] - state.prev_pos[i] + state.gravity * dt * dt;
             state.prev_pos[i] = cur_pos;
-            state.delta_pos[i] = state.pos[i] - state.prev_pos[i];
         }
     }
 }
 
 void Cloth::apply_constraint() {
     const int iterations = 10;
-    std::cout << "manifold count = " << _p2p_manifolds.size() << std::endl;
+    std::cout << "p2p: manifold count = " << _p2p_manifolds.size() << std::endl;
     for (int iter = 0; iter < iterations; ++iter) {
         // traverse constraints
         // structural constraints
@@ -229,10 +222,8 @@ void Cloth::self_collision_p2p_test() {
                 Idx2 k = {j / _dims[1], j % _dims[1]};
                 ++total_collision_checks;
                 // predictive collision
-                Geometry::LineSeg seg0 = {state.pos[i], 
-                                          state.pos[i] + state.delta_pos[i]};
-                Geometry::LineSeg seg1 = {state.pos[k], 
-                                          state.pos[k] + state.delta_pos[k]};
+                Geometry::LineSeg seg0 = {state.prev_pos[i], state.pos[i]};
+                Geometry::LineSeg seg1 = {state.prev_pos[k], state.pos[k]};
                 Geometry::AABB aabb0 = Geometry::aabb(seg0, _r + _r_sc);
                 Geometry::AABB aabb1 = Geometry::aabb(seg1, _r + _r_sc);
                 // TODO: mock broad phase
@@ -243,15 +234,15 @@ void Cloth::self_collision_p2p_test() {
                 float d = Geometry::distance(seg0, seg1);
                 if (d <= 2 * _r + _r_sc) {
                     ++narrow_phase_collide;
-                    _p2p_manifolds.push_back({i, k, glm::normalize(state.pos[k] - state.pos[i])});
+                    _p2p_manifolds.push_back({i, k, glm::normalize(state.prev_pos[k] - state.prev_pos[i])});
                 }
             }
         }
     }
 
-    std::cout << "total collision checks = " << total_collision_checks << std::endl;
-    std::cout << "broad phase intersect = " << broad_phase_intersect << std::endl;
-    std::cout << "narrow phase collide = " << narrow_phase_collide << std::endl;
+    std::cout << "p2p: total collision checks = " << total_collision_checks << std::endl;
+    std::cout << "p2p: broad phase intersect = " << broad_phase_intersect << std::endl;
+    std::cout << "p2p: narrow phase collide = " << narrow_phase_collide << std::endl;
 }
 
 void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
