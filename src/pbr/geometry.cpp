@@ -2,130 +2,90 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 float Geometry::distance(const LineSeg& seg0, const LineSeg& seg1) {
+    // assuming these line segments are not parallel
+    glm::vec2 line_coords = closest(seg0, seg1);
+    float s = line_coords.x;
+    float t = line_coords.y;
     glm::vec3 e0 = seg0.p1 - seg0.p0;
     glm::vec3 e1 = seg1.p1 - seg1.p0;
-    glm::vec3 mid0 = (seg0.p0 + seg0.p1) * 0.5f;
-    glm::vec3 mid1 = (seg1.p0 + seg1.p1) * 0.5f;
-    float len0 = glm::length(e0);
-    float mid_l = glm::length(mid0 - mid1);
-    if (len0 < epsilon3) { 
-        // seg0 degenerates into a point
-        return distance(seg0.p0, seg1);
-    }
-    if (mid_l * epsilon2 > len0) {
-        // length of seg0 is not significant
-        return distance(mid0, seg1);
-    }
 
-    float len1 = glm::length(e1);
-    if (len1 < epsilon3) {
-        // seg 1 degenerates into a point
-        return distance(seg1.p0, seg0);
-    }
-    if (mid_l * epsilon2 > len1) {
-        // length of seg1 is not significant
-        return distance(mid1, seg0);
-    }
+    glm::vec3 closest0 = seg0.p0 + s * e0;
+    glm::vec3 closest1 = seg1.p0 + t * e1;
 
+    return glm::length(closest0 - closest1);
+}
+
+glm::vec2 Geometry::closest(const LineSeg& seg0, const LineSeg& seg1) {
+    glm::vec3 e0 = seg0.p1 - seg0.p0;
+    glm::vec3 e1 = seg1.p1 - seg1.p0;
     glm::vec3 e2 = glm::cross(e0, e1);
-    if (glm::length(e2) < len0 * len1 * epsilon5) {
-        // distance between 2 parallel line segments
-        return distance_parallel(seg0, seg1);
-    }
 
-    // 2 line segments do not degenerate and are not parallel
     // construct a linear system
     glm::mat3 A(1.0f);
     A[0] = e0;
     A[1] = -e1;
     A[2] = e2;
     glm::vec3 b = seg1.p0 - seg0.p0;
-    // A should be invertible at this point
-    // TODO: determinant assertion fails sometimes, but s and t seem to have reasonable values
-    // assert(glm::abs(glm::determinant(A)) > epsilon5);
 
     glm::vec3 x = glm::inverse(A) * b;
 
-    float s = x[0]; // line coordinate of segment 0
-    float t = x[1]; // line coordinate of segment 1
+    float s = glm::clamp(x[0], 0.0f, 1.0f); // line coordinate of segment 0
+    float t = glm::clamp(x[1], 0.0f, 1.0f); // line coordinate of segment 1
 
-    glm::vec3 closest0 = seg0.p0 + glm::clamp(s, 0.0f, 1.0f) * e0;
-    glm::vec3 closest1 = seg1.p0 + glm::clamp(t, 0.0f, 1.0f) * e1;
-
-    return glm::length(closest0 - closest1);
+    return glm::vec2(s, t);
 }
 
-float Geometry::distance_parallel(const LineSeg& seg0, const LineSeg& seg1) {
-    assert(glm::length(glm::cross(seg0.p1 - seg0.p0, seg1.p1 - seg1.p0)) < epsilon3);
-    // projecting seg0.p0 onto seg1
-    glm::vec2 uv0 = barycentric(seg0.p0, seg1);
-    if (uv0.x >= 0.0f && uv0.x <= 1.0f) {
-        // seg0.p0 between seg1
-        glm::vec3 ortho = seg1.p0 * uv0.x + seg1.p1 * uv0.y;
-        return glm::length(seg0.p0 - ortho);
+glm::vec3 Geometry::closest(const glm::vec3& p, const Geometry::Triangle& tri) {
+    // TODO: assuming tri is guaranteed to be a triangle
+    // line segment barycentrics: seg01_uv seg12_uv seg20_uv
+    // triangle barycentrics: tri_uvw
+    const glm::vec3& p0 = tri.p0;
+    const glm::vec3& p1 = tri.p1;
+    const glm::vec3& p2 = tri.p2;
+
+    // test vertex regions
+    glm::vec2 seg01_uv = barycentric(p, LineSeg{p0, p1});
+    glm::vec2 seg20_uv = barycentric(p, LineSeg{p2, p0});
+    if (seg01_uv.y <= 0.0f && seg20_uv.x <= 0.0f) {
+        // vertex 0
+        return glm::vec3(1.0f, 0.0f, 0.0f);
     }
-    // projecting seg0.p1 onto seg1
-    glm::vec2 uv1 = barycentric(seg0.p1, seg1);
-    if (uv1.x >= 0.0f && uv1.x <= 1.0f) {
-        // seg0.p1 betweem seg1
-        glm::vec3 ortho = seg1.p0 * uv1.x + seg1.p1 * uv1.y;
-        return glm::length(seg0.p1 - ortho);
+
+    glm::vec2 seg12_uv = barycentric(p, LineSeg{p1, p2});
+    if (seg12_uv.y <= 0.0f && seg01_uv.x <= 0.0f) {
+        // vertex 1
+        return glm::vec3(0.0f, 1.0f, 0.0f);
     }
-    if (uv0.x < 0.0f && uv1.x < 0.0f) {
-        // seg0 completely outside of seg1.p1
-        if (uv0.x > uv1.x) {
-            return glm::length(seg0.p0 - seg1.p1);
-        } else if (uv1.x > uv0.x) {
-            return glm::length(seg0.p1 - seg1.p1);
-        } else {
-            assert(false);
-        }
+
+    if (seg20_uv.y <= 0.0f && seg12_uv.x <= 0.0f) {
+        // vertex 2
+        return glm::vec3(0.0f, 0.0f, 1.0f);
     }
-    if (uv0.y < 0.0f && uv1.y < 0.0f) {
-        // seg0 completely outside of seg1.p0
-        if (uv0.y > uv1.y) {
-            return glm::length(seg0.p0 - seg1.p0);
-        } else if (uv1.y > uv0.y) {
-            return glm::length(seg0.p1 - seg1.p0);
-        } else {
-            assert(false);
-        }
+
+    // test interior region
+    glm::vec3 tri_uvw = barycentric(p, tri);
+    if (tri_uvw.x >= 0.0f && tri_uvw.y >= 0.0f && tri_uvw.z >= 0.0f) {
+        return tri_uvw;
     }
-    if (uv0.y < 0.0f && uv1.x < 0.0f ||
-        uv0.x < 0.0f && uv1.y < 0.0f) {
-        // seg0 covers seg1 entirely
-        return distance(seg1.p0, seg0);
-    } else {
-        assert(false);
+
+    // test edge regions
+    if (seg01_uv.x >= 0.0f && seg01_uv.y >= 0.0f && tri_uvw.z <= 0.0f) {
+        // edge 01 region
+        return glm::vec3(seg01_uv, 0.0f);
     }
+
+    if (seg12_uv.x >= 0.0f && seg12_uv.y >= 0.0f && tri_uvw.x <= 0.0f) {
+        // edge 12 region
+        return glm::vec3(0.0f, seg12_uv);
+    }
+
+    if (seg20_uv.x >= 0.0f && seg20_uv.y >= 0.0f && tri_uvw.y <= 0.0f) {
+        // edge 20 region
+        return glm::vec3(seg20_uv.y, 0.0f, seg20_uv.x);
+    }
+
     assert(false);
-    return 0.0f;
-}
-
-float Geometry::distance(const glm::vec3& p, const LineSeg& seg) {
-    glm::vec3 e = seg.p1 - seg.p0;
-    glm::vec3 mid = (seg.p0 + seg.p1) * 0.5f;
-    float mid_l = glm::length(p - mid);
-    if (glm::length(e) < epsilon3) {
-        // segment degenerates into a point
-        return glm::length(p - seg.p0);
-    }
-    if (mid_l * epsilon2 > glm::length(e)) {
-        // length of seg is not significant
-        return mid_l;
-    }
-
-    glm::vec2 uv = barycentric(p, seg);
-    if (uv.x < 0.0f) {
-        // closer to p1
-        return glm::length(p - seg.p1);
-    } else if (uv.y < 0.0f) {
-        // closer to p0
-        return glm::length(p - seg.p0);
-    } else {
-        glm::vec3 ortho = seg.p0 * uv.x + seg.p1 * uv.y;
-        return glm::length(p - ortho);
-    }
+    return glm::vec3(1.0f, 0.0f, 0.0f);
 }
 
 glm::vec2 Geometry::barycentric(const glm::vec3& p, LineSeg seg) {
@@ -143,27 +103,35 @@ glm::vec2 Geometry::barycentric(const glm::vec3& p, LineSeg seg) {
     return uv;
 }
 
+glm::vec3 Geometry::barycentric(const glm::vec3& p, Triangle tri) {
+    glm::vec3 e01 = tri.p1 - tri.p0;
+    glm::vec3 e02 = tri.p2 - tri.p0;
+
+    // pseudo inverse
+    glm::mat2x3 B(e01, e02);
+    glm::mat3x2 BT = glm::transpose(B);
+    glm::mat2 BTB = BT * B;
+    // to verify tri is indeed a triangle
+    assert(abs(glm::determinant(BTB)) > epsilon7);
+    glm::mat3x2 B_pseudo_inv = glm::inverse(BTB) * BT;
+    glm::vec2 x_b = B_pseudo_inv * (p - tri.p0);
+    return glm::vec3(1.0f - x_b.x - x_b.y, x_b.x, x_b.y);
+}
+
+Geometry::AABB Geometry::aabb(const glm::vec3& p, float r) {
+    return AABB{{p - glm::vec3(r)}, {p + glm::vec3(r)}};
+}
+
 Geometry::AABB Geometry::aabb(const LineSeg& seg, float r) {
-    AABB aabb;
-    aabb.min = glm::vec3(std::numeric_limits<float>::max());
-    aabb.max = glm::vec3(std::numeric_limits<float>::lowest());
+    return merge(aabb(seg.p0, r), aabb(seg.p1, r));
+}
 
-    float val;
-    aabb.min.x = aabb.min.x > (val = seg.p0.x - r) ? val : aabb.min.x;
-    aabb.min.x = aabb.min.x > (val = seg.p1.x - r) ? val : aabb.min.x;
-    aabb.min.y = aabb.min.y > (val = seg.p0.y - r) ? val : aabb.min.y;
-    aabb.min.y = aabb.min.y > (val = seg.p1.y - r) ? val : aabb.min.y;
-    aabb.min.z = aabb.min.z > (val = seg.p0.z - r) ? val : aabb.min.z;
-    aabb.min.z = aabb.min.z > (val = seg.p1.z - r) ? val : aabb.min.z;
+Geometry::AABB Geometry::aabb(const Triangle& tri, float r) {
+    return merge(merge(aabb(tri.p0, r), aabb(tri.p1, r)), aabb(tri.p2, r));
+}
 
-    aabb.max.x = aabb.max.x < (val = seg.p0.x + r) ? val : aabb.max.x;
-    aabb.max.x = aabb.max.x < (val = seg.p1.x + r) ? val : aabb.max.x;
-    aabb.max.y = aabb.max.y < (val = seg.p0.y + r) ? val : aabb.max.y;
-    aabb.max.y = aabb.max.y < (val = seg.p1.y + r) ? val : aabb.max.y;
-    aabb.max.z = aabb.max.z < (val = seg.p0.z + r) ? val : aabb.max.z;
-    aabb.max.z = aabb.max.z < (val = seg.p1.z + r) ? val : aabb.max.z;
-
-    return aabb;
+Geometry::AABB Geometry::merge(const AABB& a, const AABB& b) {
+    return AABB{glm::min(a.min, b.min), glm::max(a.max, b.max)};
 }
 
 bool Geometry::intersect(const AABB& a, const AABB& b) {

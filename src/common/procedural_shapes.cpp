@@ -226,43 +226,6 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
         }
     }
 
-    // TODO: This is not a good way to compute tangent and bitangent for sphere.
-    // But you should test and document this
-/*      if (attrib & VertexAttrib::TANGENT) {
-        vec3_tb.resize(vec3_pb.size());
-        std::vector<bool> computed(vec3_pb.size(), false);
-        for (glm::u16vec3& i : vec3_ib) {
-            if (computed[i.x] && computed[i.y] && computed[i.z]) {
-                continue;
-            }
-
-            glm::vec3 p01 = vec3_pb[i.y] - vec3_pb[i.x];
-            glm::vec3 p02 = vec3_pb[i.z] - vec3_pb[i.x];
-            glm::vec2 uv01 = vec2_uv[i.y] - vec2_uv[i.x];
-            glm::vec2 uv02 = vec2_uv[i.z] - vec2_uv[i.x];
-
-            glm::mat2 tb_coords(uv01, uv02);
-            glm::mat2x3 edge_vectors(p01, p02);
-            // tangent - bitangent bases. not exactly perpendicular, since uv is computed in sphere coordinate
-            // document this
-            glm::mat2x3 tb_bases = edge_vectors * glm::inverse(tb_coords);
-            tb_bases[0] = glm::normalize(tb_bases[0]);
-
-            if (!computed[i.x]) {
-                vec3_tb[i.x] = tb_bases[0];
-                computed[i.x] = true;
-            }
-            if (!computed[i.y]) {
-                vec3_tb[i.y] = tb_bases[0];
-                computed[i.y] = true;
-            }
-            if (!computed[i.z]) {
-                vec3_tb[i.z] = tb_bases[0];
-                computed[i.z] = true;
-            }
-        } 
-    } */
-
     size_t v_size = vec3_pb.size();
     for (int i = 0; i < v_size; ++i) {
         if (attrib & VertexAttrib::POS) {

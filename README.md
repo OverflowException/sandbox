@@ -22,3 +22,4 @@ Document:
 2. icosphere seam
 3. brdf lut border clamping
 4. the w component of tangent. Why do I need it, how do shaders interpret this parameter. How to deal with symmetric uv.
+5. various usage of linear system theory, e. g. tbn coordinate generation & dynamic tbn & baricentric coordinate

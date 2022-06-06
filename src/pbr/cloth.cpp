@@ -115,10 +115,10 @@ void Cloth::init(const Arr1D<float>& vb,
             float len_v = glm::length(state.pos[i00] - state.pos[i01]);
             float len_diag0 = glm::length(state.pos[i00] - state.pos[i11]);
             float len_diag1 = glm::length(state.pos[i01] - state.pos[i10]);
-            _constraints.push_back({i00, i10, len_h});
-            _constraints.push_back({i00, i01, len_v});
-            _constraints.push_back({i00, i11, len_diag0});
-            _constraints.push_back({i01, i10, len_diag1});
+            _ortho_edge.push_back({i00, i10, len_h});
+            _ortho_edge.push_back({i00, i01, len_v});
+            _diag_edge.push_back({i00, i11, len_diag0});
+            _diag_edge.push_back({i01, i10, len_diag1});
         }
     }
     // right edge
@@ -127,7 +127,7 @@ void Cloth::init(const Arr1D<float>& vb,
         Idx2 i00 = i;
         Idx2 i01 = {i[0] + 1, i[1]};
         float rest_len_v = glm::length(state.pos[i00] - state.pos[i01]);
-        _constraints.push_back({i, i01, rest_len_v});
+        _ortho_edge.push_back({i, i01, rest_len_v});
     }
     // bottom edge
     i[0] = dims[0] - 1;
@@ -135,7 +135,7 @@ void Cloth::init(const Arr1D<float>& vb,
         Idx2 i00 = i;
         Idx2 i10 = {i[0], i[1] + 1};
         float rest_len_h = glm::length(state.pos[i00] - state.pos[i10]);
-        _constraints.push_back({i, i10, rest_len_h});
+        _ortho_edge.push_back({i, i10, rest_len_h});
     }
 
     // construct kinematic ids
@@ -151,7 +151,9 @@ void Cloth::update_kinematics(const Arr1D<glm::vec3>& k_pos) {
 
 void Cloth::update(float dt) {
     verlet(dt);
-    self_collision_p2p_test();
+    // self_collision_p2p_test();
+    // self_collision_p2tri_test();
+    self_collision_e2e_test();
     apply_constraint();
 }
 
@@ -169,40 +171,91 @@ void Cloth::verlet(float dt) {
 
 void Cloth::apply_constraint() {
     const int iterations = 10;
-    std::cout << "p2p: manifold count = " << _p2p_manifolds.size() << std::endl;
+    int p2p_collision_resolved = 0;
+    int p2tri_collision_resolved = 0;
+    int e2e_collision_resolved = 0;
     for (int iter = 0; iter < iterations; ++iter) {
         // traverse constraints
         // structural constraints
-        for (auto&c : _constraints) {
-            glm::vec3& p0 = state.pos[c.i0];
-            glm::vec3& p1 = state.pos[c.i1];
+        for (auto&e : _ortho_edge) {
+            glm::vec3& p0 = state.pos[e.i0];
+            glm::vec3& p1 = state.pos[e.i1];
             glm::vec3 l01 = p1 - p0;
             // TODO: square root is very expensive
             float len = glm::length(l01);
-            float diff = (len - c.rest_len) / len;
+            float diff = (len - e.rest_len) / len;
             p0 += l01 * diff * 0.5f;
             p1 -= l01 * diff * 0.5f;
         }
-        // p2p collision constraints
+        for (auto&e : _diag_edge) {
+            glm::vec3& p0 = state.pos[e.i0];
+            glm::vec3& p1 = state.pos[e.i1];
+            glm::vec3 l01 = p1 - p0;
+            // TODO: square root is very expensive
+            float len = glm::length(l01);
+            float diff = (len - e.rest_len) / len;
+            p0 += l01 * diff * 0.5f;
+            p1 -= l01 * diff * 0.5f;
+        }
+
+        // p2p collision resolution
         for (auto&m : _p2p_manifolds) {
             glm::vec3& p0 = state.pos[m.i0];
             glm::vec3& p1 = state.pos[m.i1];
             glm::vec3 e = p1 - p0;
             float proj = glm::dot(e, m.n);
-            if (proj < 2 * _r) {
-                // TODO: resolve collision
-                float diff = 2 * _r - proj;
+            if (proj < 2 * _p2p_r) {
+                ++p2p_collision_resolved;
+                float diff = 2 * _p2p_r - proj;
                 p0 -= m.n * diff * 0.5f;
                 p1 += m.n * diff * 0.5f;
             }
         }
-
+        // p2tri collision resolution
+        for (auto& m : _p2tri_manifolds) {
+            glm::vec3& p = state.pos[m.ip];
+            glm::vec3& p0 = state.pos[m.itri[0]];
+            glm::vec3& p1 = state.pos[m.itri[1]];
+            glm::vec3& p2 = state.pos[m.itri[2]];
+            float proj = glm::dot(p - p0, m.n);
+            if (proj < 2 * _p2tri_r) {
+                ++p2tri_collision_resolved;
+                // TODO: naive collision resolution.
+                // Should try out the geometric stiffness method propsed by EA
+                float diff = 2 * _p2tri_r - proj;
+                // p += m.n * diff;
+                // p0 -= m.n * diff * 0.05f;
+                // p1 -= m.n * diff * 0.05f;
+                // p2 -= m.n * diff * 0.05f;
+            }
+        }
+        // e2e collision resolution
+        for (auto& m : _e2e_manifolds) {
+            glm::vec3& e0p0 = state.pos[m.e0i0];
+            glm::vec3& e0p1 = state.pos[m.e0i1];
+            glm::vec3& e1p0 = state.pos[m.e1i0];
+            glm::vec3& e1p1 = state.pos[m.e1i1];
+            glm::vec3 e0pc = e0p0 + (e0p1 - e0p0) * m.s;
+            glm::vec3 e1pc = e1p0 + (e1p1 - e1p0) * m.t;
+            float proj = glm::dot(e1pc - e0pc, m.n);
+            if (proj < 2 * _e2e_r) {
+                ++e2e_collision_resolved;
+                float diff = 2 * _e2e_r - proj;
+                e0p0 -= m.n * diff * (1.0f - m.s);
+                e0p1 -= m.n * diff * m.s;
+                e1p0 += m.n * diff * (1.0f - m.t);
+                e1p1 += m.n * diff * m.t;
+            }
+        }
 
         // maintain kinematics vertices
         for (size_t ii = 0; ii < state.kinematic_ids.size(); ++ii) {
             state.pos[state.kinematic_ids[ii]] = state.kinematic_pos[ii];
         }
     }
+    std::cout << "p2p: collision resolved = " << p2p_collision_resolved << std::endl;
+    std::cout << "p2tri: collision resolved = " << p2tri_collision_resolved << std::endl;
+    std::cout << "e2e: collision resolved = " << e2e_collision_resolved << std::endl;
 }
 
 void Cloth::self_collision_p2p_test() {
@@ -224,15 +277,15 @@ void Cloth::self_collision_p2p_test() {
                 // predictive collision
                 Geometry::LineSeg seg0 = {state.prev_pos[i], state.pos[i]};
                 Geometry::LineSeg seg1 = {state.prev_pos[k], state.pos[k]};
-                Geometry::AABB aabb0 = Geometry::aabb(seg0, _r + _r_sc);
-                Geometry::AABB aabb1 = Geometry::aabb(seg1, _r + _r_sc);
+                Geometry::AABB aabb0 = Geometry::aabb(seg0, _p2p_r + _p2p_r_sc);
+                Geometry::AABB aabb1 = Geometry::aabb(seg1, _p2p_r + _p2p_r_sc);
                 // TODO: mock broad phase
                 if (!Geometry::intersect(aabb0, aabb1)) {
                     continue;
                 }
                 ++broad_phase_intersect;
                 float d = Geometry::distance(seg0, seg1);
-                if (d <= 2 * _r + _r_sc) {
+                if (d <= 2 * _p2p_r + _p2p_r_sc) {
                     ++narrow_phase_collide;
                     _p2p_manifolds.push_back({i, k, glm::normalize(state.prev_pos[k] - state.prev_pos[i])});
                 }
@@ -244,6 +297,130 @@ void Cloth::self_collision_p2p_test() {
     std::cout << "p2p: broad phase intersect = " << broad_phase_intersect << std::endl;
     std::cout << "p2p: narrow phase collide = " << narrow_phase_collide << std::endl;
 }
+
+void Cloth::self_collision_e2e_test() {
+    _e2e_manifolds.clear();
+
+    size_t total_collision_checks = 0;
+    size_t broad_phase_intersect = 0;
+    size_t narrow_phase_collide = 0;
+
+    // Traverse orthogonal edges
+    for (size_t i = 0; i < _ortho_edge.size(); ++i) {
+        Idx2 e0i0 = _ortho_edge[i].i0;
+        Idx2 e0i1 = _ortho_edge[i].i1;
+        // traverse all orthogonal edges after current edge
+        for (size_t j = i + 1; j < _ortho_edge.size(); ++j) {
+            Idx2 e1i0 = _ortho_edge[j].i0;
+            Idx2 e1i1 = _ortho_edge[j].i1;
+
+            // skip interconnected ones
+            if (e1i0 == e0i0 ||
+                e1i0 == e0i1 ||
+                e1i1 == e0i0 ||
+                e1i1 == e0i1) {
+                continue;
+            }
+            ++total_collision_checks;
+            // predictive collision
+            Geometry::LineSeg e0_prev = {state.prev_pos[e0i0], state.prev_pos[e0i1]};
+            Geometry::LineSeg e0_cur = {state.pos[e0i0], state.pos[e0i1]};
+            Geometry::AABB aabb_e0 = Geometry::merge(Geometry::aabb(e0_prev, _e2e_r + _e2e_r_sc),
+                                                     Geometry::aabb(e0_cur, _e2e_r + _e2e_r_sc));
+
+            Geometry::LineSeg e1_prev = {state.prev_pos[e1i0], state.prev_pos[e1i1]};
+            Geometry::LineSeg e1_cur = {state.pos[e1i0], state.pos[e1i1]};
+            Geometry::AABB aabb_e1 = Geometry::merge(Geometry::aabb(e1_prev, _e2e_r + _e2e_r_sc),
+                                                     Geometry::aabb(e1_cur, _e2e_r + _e2e_r_sc));
+            
+            // TODO: mock broad phase
+            if (!Geometry::intersect(aabb_e0, aabb_e1)) {
+                continue;
+            }
+            ++broad_phase_intersect;
+            // closest coordinates, on both lines
+            glm::vec2 cc = Geometry::closest(e0_prev, e1_prev);
+            glm::vec3 e0_prev_pc = e0_prev.p0 + (e0_prev.p1 - e0_prev.p0) * cc.x;
+            glm::vec3 e1_prev_pc = e1_prev.p0 + (e1_prev.p1 - e1_prev.p0) * cc.y;
+            // seperating direction
+            glm::vec3 sep_dir = glm::normalize(e1_prev_pc - e0_prev_pc);
+            glm::vec3 e0_cur_pc = e0_cur.p0 + (e0_cur.p1 - e0_cur.p0) * cc.x;
+            glm::vec3 e1_cur_pc = e1_cur.p0 + (e1_cur.p1 - e1_cur.p0) * cc.y;
+            // predicts collision
+            if (dot(e1_cur_pc - e0_cur_pc, sep_dir) < 2 * _e2e_r + _e2e_r_sc) {
+                ++narrow_phase_collide;
+                _e2e_manifolds.push_back({e0i0, e0i1, e1i0, e1i1, cc.x, cc.y, sep_dir});
+            }
+        }
+    }
+    std::cout << "e2e: total collision checks = " << total_collision_checks << std::endl;
+    std::cout << "e2e: broad phase intersect = " << broad_phase_intersect << std::endl;
+    std::cout << "e2e: narrow phase collide = " << narrow_phase_collide << std::endl;
+}
+
+void Cloth::self_collision_p2tri_test() {
+    _p2tri_manifolds.clear();
+
+    size_t total_collision_checks = 0;
+    size_t broad_phase_intersect = 0;
+    size_t narrow_phase_collide = 0;
+
+    Idx2 vi;
+    // traverse all vertices
+    for (vi[0] = 0; vi[0] < _dims[0]; ++vi[0]) {
+        for (vi[1] = 0; vi[1] < _dims[1]; ++vi[1]) {
+            // traverse all triangles except the one that this vertex itself is in
+            for (auto& idx : state.indices) {
+                if (vi == idx[0] || vi == idx[1] || vi == idx[2]) {
+                    continue;
+                }
+                ++total_collision_checks;
+                glm::vec3& p_cur = state.pos[vi];
+                glm::vec3& p_prev = state.prev_pos[vi];
+                Geometry::LineSeg seg = {p_prev, p_cur};
+                Geometry::Triangle tri_cur = {state.pos[idx[0]],
+                                              state.pos[idx[1]],
+                                              state.pos[idx[2]]};
+                Geometry::Triangle tri_prev = {state.prev_pos[idx[0]],
+                                               state.prev_pos[idx[1]],
+                                               state.prev_pos[idx[2]]};
+                // TODO: mock broad phase
+                Geometry::AABB aabb_seg = Geometry::aabb(seg, _p2tri_r + _p2tri_r_sc);
+                Geometry::AABB aabb_prism = Geometry::merge(Geometry::aabb(tri_prev, _p2tri_r + _p2tri_r_sc),
+                                                            Geometry::aabb(tri_cur,  _p2tri_r + _p2tri_r_sc));
+                if (!Geometry::intersect(aabb_seg, aabb_prism)) {
+                    continue;
+                }
+                ++broad_phase_intersect;
+                // narrow phase collision detection
+                // closest point on triangle
+                glm::vec3 pc_bary = Geometry::closest(p_prev, tri_prev);
+                glm::vec3 pc_prev = tri_prev.p0 * pc_bary.x +
+                                    tri_prev.p1 * pc_bary.y +
+                                    tri_prev.p2 * pc_bary.z;
+                glm::vec3 pc_cur = tri_cur.p0 * pc_bary.x +
+                                   tri_cur.p1 * pc_bary.y +
+                                   tri_cur.p2 * pc_bary.z;
+                
+                // separating direction
+                glm::vec3 sep_dir = glm::normalize(pc_prev - p_prev);
+                if (dot(pc_cur - p_cur, sep_dir) < 2 * _p2tri_r + _p2tri_r_sc) {
+                    ++narrow_phase_collide;
+                    glm::vec3 positive_dir = glm::cross(tri_prev.p1 - tri_prev.p0,
+                                                        tri_prev.p2 - tri_prev.p0);
+                    bool on_positive_side = glm::dot(positive_dir, p_prev - tri_prev.p0) > 0.0f;
+                    _p2tri_manifolds.push_back({vi, idx,
+                                                on_positive_side ?  glm::normalize(positive_dir) :
+                                                                   -glm::normalize(positive_dir)});
+                }
+            }
+        }
+    }
+
+    std::cout << "p2tri: total collision checks = " << total_collision_checks << std::endl;
+    std::cout << "p2tri: broad phase intersect = " << broad_phase_intersect << std::endl;
+    std::cout << "p2tri: narrow phase collide = " << narrow_phase_collide << std::endl;
+ }
 
 void Cloth::copy_back(Arr1D<float>::iterator vb_beg,
                       size_t vertex_stride,
