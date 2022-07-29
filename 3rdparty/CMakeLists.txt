@@ -4,4 +4,6 @@ set(BGFX_CUSTOM_TARGETS  OFF CACHE INTERNAL "")
 set(BGFX_OPENGL_VERSION  33  CACHE INTERNAL "")
 add_subdirectory(bgfx.cmake)
 
+include(tinygltf.cmake)
+
 include(imgui.cmake)

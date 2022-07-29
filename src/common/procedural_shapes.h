@@ -35,8 +35,9 @@ public:
                                int lod,
                                IndexType i_type);
     
-    static void gen_z_cylinder(std::vector<float>& pb,
+    static void gen_z_cylinder(std::vector<float>& vb,
                                std::vector<uint16_t>& ib,
+                               VertexAttrib attrib,
                                float r,
                                float height,
                                int sectors,

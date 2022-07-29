@@ -7,7 +7,7 @@ file(GLOB SHADER_SRC ./shaders/*.sc)
 
 add_executable(${EXEC_NAME} ${SRC} ${SHADER_SRC})
 
-target_link_libraries(${EXEC_NAME} PUBLIC graph_arch procedural pre_computations)
+target_link_libraries(${EXEC_NAME} PUBLIC graph_arch procedural pre_computations renderer)
 
 add_shader(shaders/pbr_vs.sc VERTEX OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)
 add_shader(shaders/pbr_fs.sc FRAGMENT OUTPUT ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/shaders GLSL 330)

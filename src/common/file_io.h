@@ -7,6 +7,7 @@
 
 #include "bimg/bimg.h"
 #include "bimg/decode.h"
+#include "skeleton_mesh.h"
 
 namespace io {
 

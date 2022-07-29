@@ -1,5 +1,7 @@
 #include <iostream>
 #include <vector>
+#include <memory>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 
@@ -8,16 +10,31 @@
 #include "common/pre_computations.h"
 #include "common/procedural_shapes.h"
 #include "controls.hpp"
+#include "camera_control.h"
+#include "ray_caster.h"
+#include "math_utils.hpp"
 
-class PbrApp : public app::Application
+#include "common/renderer.hpp"
+
+std::ostream& operator<<(std::ostream& os, const glm::vec4& v4) {
+	os << v4.x << ", " << v4.y << ", " << v4.z << ", " << v4.w;
+	return os;
+}
+
+std::ostream& operator<<(std::ostream& os, const glm::vec3& v3) {
+	os << v3.x << ", " << v3.y << ", " << v3.z;
+	return os;
+}
+
+class ToolApp : public app::Application
 {
 	// lights
 	const static int light_count = 4;
-	ImVec4 light_colors[light_count] = {
-		ImVec4(1.0f, 1.0f, 1.0f, 1.0f),
-		ImVec4(0.0f, 0.0f, 0.0f, 1.0f),
-		ImVec4(0.0f, 0.0f, 0.0f, 1.0f),
-		ImVec4(0.0f, 0.0f, 0.0f, 1.0f),
+	glm::vec3 light_colors[light_count] = {
+		glm::vec3(1.0f, 1.0f, 1.0f),
+		glm::vec3(0.0f, 1.0f, 1.0f),
+		glm::vec3(1.0f, 1.0f, 0.0f),
+		glm::vec3(0.0f, 1.0f, 0.0f),
 	};
 	glm::vec3 light_pos[light_count] = {	 // in world space
 		{ 5.0f,  5.0f, 0.5f},
@@ -29,268 +46,295 @@ class PbrApp : public app::Application
 		60.0f, 60.0f, 60.0f, 60.0f
 	};
 
-	// buffers
-	bgfx::VertexBufferHandle sphere_vb;
-	bgfx::IndexBufferHandle sphere_ib;
-	bgfx::VertexBufferHandle skybox_vb;
+	// camera
+	rdr::Renderer::Camera init_camera = {
+		.eye 	= glm::vec3(0.0f, 0.0f, 5.0f),
+		.front	= glm::vec3(0.0f, 0.0f, -1.0f),
+		.up		= glm::vec3(0.0f, 1.0f, 0.0f),
+		.width	= float(getWidth()),
+		.height	= float(getHeight()),
+		.fovy	= glm::radians(60.0f),
+		.near	= 0.1f,
+		.far	= 100.0f,
+	};
 
-	// shader pograms
-	bgfx::ProgramHandle pbr_prog;
-	bgfx::ProgramHandle skybox_prog;
+	std::shared_ptr<rdr::Renderer> renderer;
 
-	// textures
-	bgfx::TextureHandle tex_albedo;
-	bgfx::TextureHandle tex_roughness;
-	bgfx::TextureHandle tex_metallic;
-	bgfx::TextureHandle tex_normal;
-	bgfx::TextureHandle tex_ao;
-	bgfx::TextureHandle tex_skybox;
-	bgfx::TextureHandle tex_skybox_irr;
-	bgfx::TextureHandle tex_skybox_prefilter;
-	bgfx::TextureHandle tex_brdf_lut;
+	std::shared_ptr<CameraController> camera_control = nullptr;
 
-	// uniforms
-	bgfx::UniformHandle u_model_inv_t;
-	bgfx::UniformHandle u_view_inv;
-	bgfx::UniformHandle u_light_pos;
-	bgfx::UniformHandle u_light_colors;
-	bgfx::UniformHandle u_albedo;
-	bgfx::UniformHandle u_metallic_roughness_ao;
+	std::shared_ptr<RayCaster> ray_caster = nullptr;
 
-	// samplers
-	bgfx::UniformHandle s_albedo;
-	bgfx::UniformHandle s_roughness;
-	bgfx::UniformHandle s_metallic;
-	bgfx::UniformHandle s_normal;
-	bgfx::UniformHandle s_ao;
-	bgfx::UniformHandle s_skybox;
-	bgfx::UniformHandle s_skybox_irr;
-	bgfx::UniformHandle s_skybox_prefilter;
-	bgfx::UniformHandle s_brdf_lut;
+	std::vector<float> vb;
+	std::vector<uint16_t> ib;
 
-	bgfx::ViewId opaque_id = 0;
-	uint64_t opaque_state = 0
-		| BGFX_STATE_WRITE_RGB
-		| BGFX_STATE_WRITE_A
-		| BGFX_STATE_WRITE_Z
-		| BGFX_STATE_DEPTH_TEST_LESS
-		| BGFX_STATE_CULL_CW;
+	struct Geometry {
+		enum Shape {
+			Sphere,
+			Cylinder,
+		};
 
-	bgfx::ViewId skybox_id = 1;
-	uint64_t skybox_state = 0
-		| BGFX_STATE_WRITE_RGB
-		| BGFX_STATE_WRITE_A
-		| BGFX_STATE_WRITE_Z
-		| BGFX_STATE_DEPTH_TEST_LEQUAL;
+		Geometry(Shape s,
+				 std::shared_ptr<rdr::Renderer> renderer,
+				 std::shared_ptr<RayCaster> ray_caster) {
+			std::vector<float> vb;
+			if (s == Sphere) {
+				ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+		 										 0.02f, 2, ProceduralShapes::IndexType::TRIANGLE);
+			} else if (s == Cylinder) {
+						ProceduralShapes::gen_z_cylinder(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+										 				 0.5f, 1.5f, 32, 16, ProceduralShapes::IndexType::TRIANGLE);
+			}
+			make_streams(vb, vb_pos, vb_normal, vb_uv, vb_tangent);
+
+			rdr::Renderer::Primitive::VertexDesc desc_pos = {
+				.data = vb_pos.data(),
+				.size = uint32_t(vb_pos.size() * sizeof(float)),
+				.attrib = bgfx::Attrib::Position,
+				.num = 3,
+				.type = bgfx::AttribType::Float,
+				.is_dynamic = false,
+			};
+
+			rdr::Renderer::Primitive::VertexDesc desc_normal = {
+				.data = vb_normal.data(),
+				.size = uint32_t(vb_normal.size() * sizeof(float)),
+				.attrib = bgfx::Attrib::Normal,
+				.num = 3,
+				.type = bgfx::AttribType::Float,
+				.is_dynamic = false,
+			};
+
+			rdr::Renderer::Primitive::VertexDesc desc_uv = {
+				.data = vb_uv.data(),
+				.size = uint32_t(vb_uv.size() * sizeof(float)),
+				.attrib = bgfx::Attrib::TexCoord0,
+				.num = 2,
+				.type = bgfx::AttribType::Float,
+				.is_dynamic = false,
+			};
+
+			rdr::Renderer::Primitive::VertexDesc desc_tangent = {
+				.data = vb_tangent.data(),
+				.size = uint32_t(vb_tangent.size() * sizeof(float)),
+				.attrib = bgfx::Attrib::Tangent,
+				.num = 3,
+				.type = bgfx::AttribType::Float,
+				.is_dynamic = false,
+			};
+
+			rdr::Renderer::Primitive::IndexDesc desc_idx = {
+				.data = ib.data(),
+				.size = uint32_t(ib.size() * sizeof(uint16_t)),
+				.is_dynamic = false,
+			};
+
+			// set primitive
+			rdr::Renderer::Primitive prim;
+			prim.add_vertex_buffer(desc_pos);
+			prim.add_vertex_buffer(desc_normal);
+			prim.add_vertex_buffer(desc_uv);
+			prim.add_vertex_buffer(desc_tangent);
+			prim.set_index_buffer(desc_idx);
+			rdr::Renderer::Material material = {
+				glm::vec3(0.7f, 0.7f, 0.3f),
+				0.8f,
+				0.3f,
+				1.0f,
+				"pbr"
+			};
+			prim.set_material(material);
+			prim.set_transform(glm::mat4(1.0f));
+			prim_id = renderer->add_primitive(prim);
+
+			if (ray_caster)  {
+				RayCaster::TriMeshDesc prim_rc_desc = {
+					.p_desc = {.data = vb_pos.data(),	.count = (uint32_t)vb_pos.size(),},
+					.n_desc = {.data = vb_normal.data(),.count = (uint32_t)vb_normal.size(),},
+					.i_desc = {.data = ib.data(),		.count = (uint32_t)ib.size(),},
+					.transform = glm::mat4(1.0f),
+				};
+				ray_caster_id = ray_caster->add_tri_mesh(prim_rc_desc);
+			}
+		}
+
+		void make_streams(const std::vector<float>& vb,
+						  std::vector<float>& pos,
+						  std::vector<float>& normal,
+						  std::vector<float>& uv,
+						  std::vector<float>& tangent) {
+			size_t vertex_count = vb.size() / 11;
+			for (int i = 0; i < vertex_count; ++i) {
+				int j = i * 11;
+				pos		.insert(pos.end(),		{vb[j],		vb[j + 1], vb[j + 2]});
+				normal	.insert(normal.end(),	{vb[j + 3], vb[j + 4], vb[j + 5]});
+				uv		.insert(uv.end(),		{vb[j + 6], vb[j + 7]});
+				tangent	.insert(tangent.end(),	{vb[j + 8], vb[j + 9], vb[j + 10]});
+			}
+		}
+
+		std::vector<float> vb_pos;
+		std::vector<float> vb_normal;
+		std::vector<float> vb_uv;
+		std::vector<float> vb_tangent;
+		std::vector<uint16_t> ib;
+		size_t prim_id = -1;
+		size_t ray_caster_id = -1;
+	};
+
+	std::shared_ptr<Geometry> target;
+
+	std::vector<std::shared_ptr<Geometry>> markers;
 
 	void initialize(int argc, char** argv) {
-		// bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
+		bgfx::setDebug(BGFX_DEBUG_TEXT | BGFX_DEBUG_STATS);
 
-		std::vector<float> vb;
-		std::vector<uint16_t> ib;
+		// initialize renderer
+		renderer.reset(new rdr::Renderer);
 
-		// sphere vertices
-		ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										1.5f, 3, ProceduralShapes::IndexType::TRIANGLE);
-		bgfx::VertexLayout v_layout;
-		v_layout.begin()
-			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Normal, 3, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float)
-			.add(bgfx::Attrib::Tangent, 3, bgfx::AttribType::Float)
-		.end();
-		sphere_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), v_layout);
-		sphere_ib = bgfx::createIndexBuffer(bgfx::copy(ib.data(), ib.size() * sizeof(uint16_t)));
+		// initialize camera controller
+		camera_control.reset(new CameraController(init_camera));
 
-		// skybox vertices
-		ProceduralShapes::gen_cube(vb, ProceduralShapes::VertexAttrib::POS, glm::vec3(1.0f, 1.0f, 1.0f), ProceduralShapes::TRIANGLE);
-		bgfx::VertexLayout skybox_layout;
-		skybox_layout.begin()
-			.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float)
-		.end();
-		skybox_vb = bgfx::createVertexBuffer(bgfx::copy(vb.data(), vb.size() * sizeof(float)), skybox_layout);
+		// initilize ray caster
+		ray_caster.reset(new RayCaster);
 
-		pbr_prog = io::load_program("shaders/glsl/pbr_vs.bin", "shaders/glsl/pbr_fs.bin");
-		assert(bgfx::isValid(pbr_prog));
-		skybox_prog = io::load_program("shaders/glsl/skybox_vs.bin", "shaders/glsl/skybox_fs.bin");
-		assert(bgfx::isValid(skybox_prog));
+		// set camera
+		renderer->camera() = init_camera;
 
-		// textures
-		tex_albedo = io::load_texture_2d("textures/gold_scuffed/albedo.png");
-		tex_roughness = io::load_texture_2d("textures/gold_scuffed/roughness.png");
-		tex_metallic = io::load_texture_2d("textures/gold_scuffed/metallic.png");
-		tex_normal = io::load_texture_2d("textures/gold_scuffed/normal.png");
-		tex_ao = io::load_texture_2d("textures/gold_scuffed/ao.png");
-		tex_skybox = io::load_texture_cube({"textures/skybox/right.jpg",
-		 									"textures/skybox/left.jpg",
-		 									"textures/skybox/top.jpg",
-		 									"textures/skybox/bottom.jpg",
-		 									"textures/skybox/front.jpg",
-		 									"textures/skybox/back.jpg",});
-		// tex_skybox = io::load_ktx_cube_map("textures/skybox/texture-cubemap-test.ktx");
-		// tex_skybox = io::load_texture_cube_immutable_ktx("textures/skybox/warehouse.ktx");
-		tex_skybox_irr = pcp::gen_irradiance_map(tex_skybox, 32);
-		tex_skybox_prefilter = pcp::gen_prefilter_map(tex_skybox, 256, 5);
-		// tex_brdf_lut = io::load_texture_2d("textures/skybox/brdf_lut_v_flipped.png");
-		tex_brdf_lut = pcp::gen_brdf_lut(512);
+		// set lighting
+		auto& lights = renderer->lights();
+		for (int i = 0; i < light_count; ++i) {
+			lights.push_back({
+				light_pos[i],
+				light_colors[i],
+				light_intensities[i]});
+		}
 
-		// uniforms
-		u_model_inv_t = bgfx::createUniform("u_model_inv_t", bgfx::UniformType::Mat4);
-		u_view_inv = bgfx::createUniform("u_view_inv", bgfx::UniformType::Mat4);
-		u_light_pos = bgfx::createUniform("u_light_pos", bgfx::UniformType::Vec4, light_count);
-		u_light_colors = bgfx::createUniform("u_light_colors", bgfx::UniformType::Vec4, light_count);
+		// set target primitive
+		target.reset(new Geometry(Geometry::Shape::Cylinder,
+								  renderer,
+								  ray_caster));
+		glm::mat4 target_transform = glm::rotate(glm::mat4(1.0f), float(M_PI_2), glm::vec3(1.0f, 0.0f, 0.0f));
+		renderer->primitive(target->prim_id).transform = target_transform;
+		ray_caster->update_transform(target->ray_caster_id, target_transform);
 
-		u_albedo = bgfx::createUniform("u_albedo", bgfx::UniformType::Vec4);
-		u_metallic_roughness_ao = bgfx::createUniform("u_metallic_roughness_ao", bgfx::UniformType::Vec4);
+		// set marker primitive
+		markers.resize(target->vb_pos.size() / 3);
+		for (int i = 0; i < markers.size(); ++i) {
+			markers[i].reset(new Geometry(Geometry::Shape::Sphere,
+					   		 			  renderer,
+							 			  ray_caster));
+			std::shared_ptr<Geometry> marker_ptr = markers[i];
+			renderer->primitive(marker_ptr->prim_id).set_material({
+				.albedo = glm::vec3(1.0f, 1.0f, 1.0f),
+				.metallic = 0.3f,
+				.roughness = 0.6f,
+				.ao = 1.0f,
+				.shader_name = "pbr",
+			});
 
-		// samplers
-		s_albedo = bgfx::createUniform("s_albedo", bgfx::UniformType::Sampler);
-		s_roughness = bgfx::createUniform("s_roughness", bgfx::UniformType::Sampler);
-		s_metallic = bgfx::createUniform("s_metallic", bgfx::UniformType::Sampler);
-		s_normal = bgfx::createUniform("s_normal", bgfx::UniformType::Sampler);
-		s_ao = bgfx::createUniform("s_ao", bgfx::UniformType::Sampler);
-		s_skybox = bgfx::createUniform("s_skybox", bgfx::UniformType::Sampler);
-		s_skybox_irr = bgfx::createUniform("s_skybox_irr", bgfx::UniformType::Sampler);
-		s_skybox_prefilter = bgfx::createUniform("s_skybox_prefilter", bgfx::UniformType::Sampler);
-		s_brdf_lut = bgfx::createUniform("s_brdf_lut", bgfx::UniformType::Sampler);
+			glm::vec3 marker_pos = target_transform * glm::vec4(glm::make_vec3(&target->vb_pos[i * 3]), 1.0f);
+			renderer->primitive(marker_ptr->prim_id).set_transform(glm::translate(glm::mat4(1.0f), marker_pos));
+		}
+		// renderer->primitive(target->prim_id).set_transform();
 
-		bgfx::setViewClear(opaque_id,
-							BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
-							0x0f0f0fff,
-							1.0f,
-							0);
-		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
-		bgfx::setViewFrameBuffer(opaque_id, BGFX_INVALID_HANDLE); // set default back buffer. To counteract irradiance map's framebuffer settings
+		renderer->reset(uint16_t(getWidth()), uint16_t(getHeight()));
 	}
 
 	int shutdown() {
-		bgfx::destroy(sphere_vb);
-		bgfx::destroy(sphere_ib);
-		bgfx::destroy(skybox_vb);
-		bgfx::destroy(pbr_prog);
-		bgfx::destroy(skybox_prog);
-		bgfx::destroy(tex_albedo);
-		bgfx::destroy(tex_roughness);
-		bgfx::destroy(tex_metallic);
-		bgfx::destroy(tex_normal);
-		bgfx::destroy(tex_ao);
-		bgfx::destroy(tex_skybox);
-		bgfx::destroy(tex_skybox_irr);
-		bgfx::destroy(tex_skybox_prefilter);
-		bgfx::destroy(tex_brdf_lut);
-		bgfx::destroy(u_model_inv_t);
-		bgfx::destroy(u_view_inv);
-		bgfx::destroy(u_light_pos);
-		bgfx::destroy(u_light_colors);
-		bgfx::destroy(u_albedo);
-		bgfx::destroy(u_metallic_roughness_ao);
-		bgfx::destroy(s_albedo);
-		bgfx::destroy(s_roughness);
-		bgfx::destroy(s_metallic);
-		bgfx::destroy(s_normal);
-		bgfx::destroy(s_ao);
-		bgfx::destroy(s_skybox);
-		bgfx::destroy(s_skybox_irr);
-		bgfx::destroy(s_skybox_prefilter);
-		bgfx::destroy(s_brdf_lut);
-
+		ray_caster = nullptr;
+		camera_control = nullptr;
+		renderer = nullptr;
 		return 0;
 	}
 
 	void onReset() {
-		bgfx::setViewClear(opaque_id,
-							BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH,
-							0x0f0f0fff,
-							1.0f,
-							0);
-		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
+		if (renderer) {
+			init_camera.width = getWidth();
+			init_camera.height = getHeight();
+			camera_control->camera() = init_camera;
+			renderer->camera() = init_camera;
+			renderer->reset(uint16_t(getWidth()), uint16_t(getHeight()));
+		}
 	}
 
 	void update(float dt) {
-		Ctrl::camera_control();
-		glm::mat4 proj = glm::perspective(glm::radians(60.0f), float(getWidth()) / getHeight(), 0.1f, 100.0f);
-		glm::mat4 view = glm::lookAt(Ctrl::eye,
-									Ctrl::eye + Ctrl::front, Ctrl::up);
-		glm::mat4 view_inv = glm::inverse(view);
-		bgfx::setViewTransform(opaque_id, &view[0][0], &proj[0][0]);
-		bgfx::setViewRect(opaque_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
-		bgfx::setUniform(u_view_inv, &view_inv);
-
-		Ctrl::model_control();
-		// rotation order: z-y-x
-		glm::mat4 model(1.0f);
-		model = glm::rotate(model, float(Ctrl::model_euler.z), glm::vec3(0.0f, 0.0f, 1.0f));
-		model = glm::rotate(model, float(Ctrl::model_euler.y), glm::vec3(0.0f, 1.0f, 0.0f));
-		model = glm::rotate(model, float(Ctrl::model_euler.x), glm::vec3(1.0f, 0.0f, 0.0f));
-		bgfx::setTransform(&model[0][0]);
-		glm::mat4 model_inv_t = glm::transpose(glm::inverse(model));
-		bgfx::setUniform(u_model_inv_t, &model_inv_t);
-
-		Ctrl::material_control();
-		bgfx::setUniform(u_albedo, &Ctrl::albedo);
-		float mra[3] = {Ctrl::metallic, Ctrl::roughness, Ctrl::ao};
-		bgfx::setUniform(u_metallic_roughness_ao, mra);
-
-		// light control
-		// TODO: lighting position computation is not correct
-		glm::vec4 view_light_pos[light_count];
-		for (int i = 0; i < light_count; ++i) {
-			view_light_pos[i] = view * glm::vec4(light_pos[i], 1.0f);
-		}
-		bgfx::setUniform(u_light_pos, view_light_pos, light_count);
-		{
-			ImGui::Begin("lights");
-			std::string color_name = "light color  ";
-			std::string intensity_name = "light intensity  ";
-			for (int i = 0; i < light_count; ++i) {
-				color_name.back() = '0' + i;
-				intensity_name.back() = '0' + i;
-				ImGui::SliderFloat(intensity_name.c_str(), &light_intensities[i], 0.0f, 100.0f);
-				ImGui::ColorPicker3(color_name.c_str(), (float*)&(light_colors[i]));
-			}
-			ImGui::End();
-		}
-		glm::vec4 light_color_intensities[4];
-		for (int i = 0; i < light_count; ++i) {
-			light_color_intensities[i] = glm::vec4(light_colors[i].x * light_intensities[i],
-													light_colors[i].y * light_intensities[i],
-													light_colors[i].z * light_intensities[i],
-													light_colors[i].w * light_intensities[i]);
-		}
-		bgfx::setUniform(u_light_colors, light_color_intensities, light_count);
-		
-  		bgfx::setTexture(0, s_albedo, tex_albedo);
-		bgfx::setTexture(1, s_roughness, tex_roughness);
-		bgfx::setTexture(2, s_metallic, tex_metallic);
-		bgfx::setTexture(3, s_normal, tex_normal);
-		bgfx::setTexture(4, s_ao, tex_ao);
-		bgfx::setTexture(5, s_skybox_irr, tex_skybox_irr);
-		bgfx::setTexture(6, s_skybox_prefilter, tex_skybox_prefilter);
-		bgfx::setTexture(7, s_brdf_lut, tex_brdf_lut);
-		bgfx::setVertexBuffer(0, sphere_vb);
-		bgfx::setIndexBuffer(sphere_ib);
-		bgfx::setState(opaque_state);
-		bgfx::submit(opaque_id, pbr_prog);
-
-		// skybox has to be in a separate drawcall since uniform changed
- 		view = glm::mat4(glm::mat3(view));
-		bgfx::setViewTransform(skybox_id, &view[0][0], &proj[0][0]);
-		bgfx::setViewRect(skybox_id, 0, 0, uint16_t(getWidth()), uint16_t(getHeight()));
-		// bgfx::setTexture(0, s_skybox, tex_skybox);
-		// bgfx::setTexture(0, s_skybox, tex_skybox_irr);
-		bgfx::setTexture(0, s_skybox, tex_skybox);
-		bgfx::setVertexBuffer(0, skybox_vb);
-		bgfx::setState(skybox_state);
-		bgfx::submit(skybox_id, skybox_prog);
+		renderer->camera() = camera_control->camera();
+		renderer->render();
 
 		// do not call bgfx::frame() here. Or imgui would flash
 		// bgfx::frame();
 	}
+
+	void onScroll(double xoffset, double yoffset) {
+		double xpos = 0.0f;
+		double ypos = 0.0f;
+		glfwGetCursorPos(mWindow, &xpos, &ypos);
+		std::cout << "onScroll, xoffset = " << xoffset << ", yoffset = " << yoffset << std::endl;
+		std::cout << ", x = " << xpos << ", y = " << ypos << std::endl;
+
+		CameraController::MouseButton::Enum btn = CameraController::MouseButton::Middle;
+		CameraController::MouseAction::Enum act = CameraController::MouseAction::None;
+		if (yoffset < 0) {
+			act = CameraController::MouseAction::ScrollDown;
+		} else if (yoffset > 0) {
+			act = CameraController::MouseAction::ScrollUp;
+		} else {}
+		camera_control->mouse_action(btn, act, {(float)xpos, (float)ypos});
+	}
+
+	void onCursorPos(double xpos, double ypos) {
+		camera_control->cursor_move({(float)xpos, (float)ypos});
+
+		// temp: mouse picking
+		bool left_button_pressed = (glfwGetMouseButton(mWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS);
+		if (!left_button_pressed) {
+			return;
+		}
+
+		rdr::Renderer::Camera cur_camera = camera_control->camera();
+		MathUtil::Camera math_camera = *reinterpret_cast<MathUtil::Camera*>(&cur_camera);
+		RayCaster::Ray ray = {
+			.origin = cur_camera.eye,
+			.direction = glm::normalize(MathUtil::ndc2world(MathUtil::wnd2ndc({xpos, ypos}, math_camera), -1.0f, math_camera) - math_camera.eye),
+		};
+		std::cout << "cast origin = " << ray.origin << std::endl;
+		std::cout << "cast direction = " << ray.direction << std::endl;
+		RayCaster::RayTriManifold cast_result =  std::move(ray_caster->intersect(ray));
+		if (cast_result.intersect) {
+			glm::vec3 p_itsc = ray.origin + ray.direction * cast_result.t_ray;
+			// brush
+			RayCaster::Sphere brush = {
+				.center = p_itsc,
+				.radius = 0.15f,
+			};
+
+			auto enveloped = std::move(ray_caster->envelope(cast_result.mesh_id, brush));
+			for (uint16_t id : enveloped) {
+				renderer->primitive(markers[id]->prim_id).material.albedo = glm::vec3(1.0f, 0.0f, 1.0f);
+			}
+		} else {
+			std::cout << "cast no intersection" << std::endl;
+		}
+	}
+
+	void onMouseButton(int button, int action, int mods) {
+		double xpos = 0.0f;
+		double ypos = 0.0f;
+		glfwGetCursorPos(mWindow, &xpos, &ypos);
+		// std::cout << "onMouseButton, button = " << button << ", action = " << action << ", mods = " << mods;
+		// std::cout << ", x = " << xpos << ", y = " << ypos << std::endl;
+
+		CameraController::MouseButton::Enum btn = (CameraController::MouseButton::Enum)button;
+		CameraController::MouseAction::Enum act = (CameraController::MouseAction::Enum)action;
+
+		camera_control->mouse_action(btn, act, {(float)xpos, (float)ypos});
+	}
+
 public:
-	PbrApp() : app::Application("PBR") {}
+	ToolApp() : app::Application("Cloth Tool") {}
 };
 
 int main(int argc, char** argv) {
-	PbrApp app;
+	ToolApp app;
 	return app.run(argc, argv);
 }

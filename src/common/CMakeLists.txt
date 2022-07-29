@@ -9,6 +9,12 @@ add_library(procedural STATIC procedural_shapes.cpp)
 add_library(file_io STATIC file_io.cpp)
 target_link_libraries(file_io PUBLIC bx bimg bgfx)
 
+#add_library(gltf_loader STATIC gltf_loader.cpp)
+#target_link_libraries(gltf_loader PUBLIC tinygltf)
+
+add_library(renderer STATIC renderer.cpp)
+target_link_libraries(renderer PUBLIC bgfx bimg file_io)
+
 file(GLOB SHADER_SRC ./shaders/*.sc)
 add_library(pre_computations STATIC pre_computations.cpp ${SHADER_SRC})
 target_link_libraries(pre_computations PUBLIC bx bimg bgfx file_io)

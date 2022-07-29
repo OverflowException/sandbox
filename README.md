@@ -7,6 +7,7 @@ NOTE:
 2. build/vscode-cmaketools is actually debug build
 3. use texturec to generate .ktx for cubemaps. Write this operation into cmakelists. texturev to view.
 4. equirectangular map should have width twice as its height. If not, edit with pinta
+5. For metallicRoughnessTexture, its channels could be more commonly known as ORM: O--Occlusion--Red channel, R--Roughness--Green channel, M--Metallic--Blue channel
 
 TODO:
 1. brdf lut behaves weirdly. There's a little round artifact in the middle when rendering surfaces with low roughness
