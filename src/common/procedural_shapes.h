@@ -35,22 +35,15 @@ public:
                                int lod,
                                IndexType i_type);
     
-    static void gen_z_cylinder(std::vector<float>& vb,
+    static void gen_z_cone(std::vector<float>& vb,
                                std::vector<uint16_t>& ib,
                                VertexAttrib attrib,
-                               float r,
+                               float r_top,
+                               float r_bottom,
                                float height,
                                int sectors,
                                int stacks,
                                IndexType i_type);
-    
-    static void gen_z_capsule(std::vector<float>& pb,
-                              std::vector<uint16_t>& ib,
-                              float r,
-                              float height,
-                              int sectors,
-                              int stacks,
-                              IndexType i_type);
 
     // Cube with hard edge
     // Geometry is so simple that it does not need index buffer
@@ -65,8 +58,6 @@ private:
     static void init_icosphere(float r, PositionBuffer& pb, IndexBuffer& ib);
     
     static void add_icosphere_lod(float r, PositionBuffer& pb, IndexBuffer& ib);
-    
-    static void z_cylinder(PositionBuffer& pb, IndexBuffer& ib, float r, float height, int sectors, int stacks);
     
     static void morph_cylinder2hemisphere(PositionBuffer::iterator beg,
                                           glm::vec3 center,

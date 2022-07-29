@@ -91,8 +91,8 @@ public:
         float far;
     };
 
-    struct PointLight {
-        glm::vec3 position;
+    struct DirectionalLight {
+        glm::vec3 direction;
         glm::vec3 color;
         float     intensity;
     };
@@ -115,8 +115,8 @@ public:
     // std::vector<Primitive>& primitives() { return _primitives; };
     // const std::vector<Primitive>& primitives() const { return _primitives; };
 
-    std::vector<PointLight>& lights() { return _lights; };
-    const std::vector<PointLight>& lights() const { return _lights; };
+    std::vector<DirectionalLight>& lights() { return _lights; };
+    const std::vector<DirectionalLight>& lights() const { return _lights; };
 
     Camera& camera() { return _camera; };
     const Camera& camera() const { return _camera; };
@@ -133,8 +133,7 @@ public:
 private:
 
     Camera                                        _camera;
-    std::vector<PointLight>                       _lights;
-    // std::vector<Primitive>                        _primitives;
+    std::vector<DirectionalLight>                 _lights;
     std::map<size_t, Primitive>                   _primitives;
     std::map<std::string, bgfx::ProgramHandle>    _shaders;
     std::map<std::string, bgfx::UniformHandle>    _uniforms;

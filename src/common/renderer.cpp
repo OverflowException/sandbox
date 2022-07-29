@@ -64,10 +64,10 @@ void Renderer::render() {
         std::vector<glm::vec4> arr_light_pos;
         std::vector<glm::vec4> arr_light_color;
         for (auto& light : _lights) {
-            arr_light_pos.emplace_back(glm::vec4(light.position, 1.0f));
+            arr_light_pos.emplace_back(glm::vec4(light.direction, 0.0f));
             arr_light_color.emplace_back(light.color * light.intensity, 1.0f);
         }
-        set_uniform("u_light_pos", arr_light_pos.data(), bgfx::UniformType::Vec4, light_count);
+        set_uniform("u_light_dirs", arr_light_pos.data(), bgfx::UniformType::Vec4, light_count);
         set_uniform("u_light_colors", arr_light_color.data(), bgfx::UniformType::Vec4, light_count);
         glm::vec4 vec4_view_pos = glm::vec4(_camera.eye, 1.0f);
         set_uniform("u_view_pos", &vec4_view_pos, bgfx::UniformType::Vec4);

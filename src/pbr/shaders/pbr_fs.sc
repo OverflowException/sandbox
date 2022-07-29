@@ -8,7 +8,7 @@ $input v_tangent   // in view space
 #define MAX_LIGHT_COUNT 8
 
 uniform vec4 u_light_count;
-uniform vec4 u_light_pos[MAX_LIGHT_COUNT];  // in view space
+uniform vec4 u_light_dirs[MAX_LIGHT_COUNT];  // in view space
 uniform vec4 u_light_colors[MAX_LIGHT_COUNT];
 uniform vec4 u_view_pos;
 
@@ -40,11 +40,9 @@ void main() {
     int light_num = int(min(u_light_count.x, MAX_LIGHT_COUNT));
     for(int i = 0; i < light_num; ++i) {
         // calculate per-light radiance
-        vec3 l = normalize(vec3(u_light_pos[i]) - v_frag_pos);
+        vec3 l = -normalize(vec3(u_light_dirs[i]));
         vec3 h = normalize(v + l);
-        float distance    = length(vec3(u_light_pos[i]) - v_frag_pos);
-        float attenuation = 1.0 / (distance * distance);
-        vec3 radiance     = vec3(u_light_colors[i]) * attenuation;
+        vec3 radiance = vec3(u_light_colors[i]);
         
         // cook-torrance brdf
         float ndf = DistributionGGX(n, h, roughness);

@@ -36,14 +36,14 @@ class ToolApp : public app::Application
 		glm::vec3(1.0f, 1.0f, 0.0f),
 		glm::vec3(0.0f, 1.0f, 0.0f),
 	};
-	glm::vec3 light_pos[light_count] = {	 // in world space
-		{ 5.0f,  5.0f, 0.5f},
-		{ 5.0f, -5.0f, 5.0f},
-		{-5.0f, -5.0f, 5.0f},
-		{-5.0f,  5.0f, 5.0f},
+	glm::vec3 light_dirs[light_count] = {	 // in world space
+		{ 1.0f,  1.0f, -1.0f},
+		{ 1.0f, -1.0f,  1.0f},
+		{-1.0f, -1.0f,  1.0f},
+		{-1.0f,  1.0f, -1.0f},
 	};
 	float light_intensities[light_count] = {
-		60.0f, 60.0f, 60.0f, 60.0f
+		5.0f, 5.0f, 5.0f, 5.0f
 	};
 
 	// camera
@@ -81,8 +81,8 @@ class ToolApp : public app::Application
 				ProceduralShapes::gen_ico_sphere(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
 		 										 0.02f, 2, ProceduralShapes::IndexType::TRIANGLE);
 			} else if (s == Cylinder) {
-						ProceduralShapes::gen_z_cylinder(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
-										 				 0.5f, 1.5f, 32, 16, ProceduralShapes::IndexType::TRIANGLE);
+						ProceduralShapes::gen_z_cone(vb, ib, ProceduralShapes::VertexAttrib::POS_NORM_UV_TANGENT,
+										 				 0.5f, 0.9, 1.5f, 32, 16, ProceduralShapes::IndexType::TRIANGLE);
 			}
 			make_streams(vb, vb_pos, vb_normal, vb_uv, vb_tangent);
 
@@ -204,7 +204,7 @@ class ToolApp : public app::Application
 		auto& lights = renderer->lights();
 		for (int i = 0; i < light_count; ++i) {
 			lights.push_back({
-				light_pos[i],
+				light_dirs[i],
 				light_colors[i],
 				light_intensities[i]});
 		}
@@ -213,7 +213,7 @@ class ToolApp : public app::Application
 		target.reset(new Geometry(Geometry::Shape::Cylinder,
 								  renderer,
 								  ray_caster));
-		glm::mat4 target_transform = glm::rotate(glm::mat4(1.0f), float(M_PI_2), glm::vec3(1.0f, 0.0f, 0.0f));
+		glm::mat4 target_transform = glm::rotate(glm::mat4(1.0f), float(M_PI_2), glm::vec3(-1.0f, 0.0f, 0.0f));
 		renderer->primitive(target->prim_id).transform = target_transform;
 		ray_caster->update_transform(target->ray_caster_id, target_transform);
 

@@ -256,10 +256,11 @@ void ProceduralShapes::gen_cube(std::vector<float>& vb,
     };
 }
 
-void ProceduralShapes::gen_z_cylinder(std::vector<float>& vb,
+void ProceduralShapes::gen_z_cone(std::vector<float>& vb,
                                       std::vector<uint16_t>& ib,
                                       VertexAttrib attrib,
-                                      float r,
+                                      float r_top,
+                                      float r_bottom,
                                       float height,
                                       int sectors,
                                       int stacks,
@@ -270,16 +271,73 @@ void ProceduralShapes::gen_z_cylinder(std::vector<float>& vb,
     TangentBuffer vec3_tb;
     IndexBuffer vec3_ib;
 
-    // generate position buffer
-    z_cylinder(vec3_pb, vec3_ib, r, height, sectors, stacks);
-    // generate normal buffer
-    for(const glm::vec3& p : vec3_pb) {
-        vec3_nb.push_back(glm::normalize(glm::vec3(p.x, p.y, 0.0f)));
+    float delta_phi = M_PI * 2.0f / sectors;
+    float delta_r = (r_top - r_bottom) / stacks;
+    float delta_z = height / stacks;
+
+    // generate uv buffer
+    for (int sta = 0; sta <= stacks; ++sta) {
+        float v = (float)sta / stacks;
+        for (int sec = 0; sec <= sectors; ++sec) {
+            float u = (float)sec / sectors;
+            vec2_uv.emplace_back(u, v);
+        }
     }
-    // TODO: mock uv
-    vec2_uv.resize(vec3_pb.size());
-    // TODO: mock tangent
-    vec3_tb.resize(vec3_pb.size());
+
+    // generate position buffer
+    float z_start = -height / 2;
+    for (glm::vec2& uv : vec2_uv) {
+        float r = r_bottom + (r_top - r_bottom) * uv.y;
+        float phi = M_PI * 2.0f * uv.x;
+        float x = r * cos(phi);
+        float y = r * sin(phi);
+        float z = z_start + uv.y * height;
+        vec3_pb.emplace_back(x, y, z);
+    }
+
+    // generate tangent buffer
+    glm::vec3 t0(0.0f, 1.0f, 0.0f);
+    for (glm::vec2& uv : vec2_uv) {
+        glm::quat t_rot = glm::angleAxis(uv.x * glm::two_pi<float>(),
+                                         glm::vec3(0.0f, 0.0f, 1.0f));
+        glm::vec3 t = glm::normalize(glm::rotate(t_rot, t0));
+        vec3_tb.push_back(t);
+    }
+
+    // generate normal buffer
+    float angle = std::atan2(r_top - r_bottom, height);
+    for (int i = 0; i < vec3_pb.size(); ++i) {
+        glm::vec3& p = vec3_pb[i];
+        glm::vec3& t = vec3_tb[i];
+        glm::vec3 n(p.x, p.y, 0.0f);
+        glm::quat n_rot = glm::angleAxis(angle, t);
+        n = glm::normalize(glm::rotate(n_rot, n));
+        vec3_nb.push_back(n);
+    }
+
+    // set indices
+    // v -- axial index  -- stacks
+    // u -- radial index -- sectors
+    //  p01 -- p11
+    //   |    / |
+    //   |   /  |
+    //   |  /   |
+    //   p00 -- p10
+    for (uint16_t v = 0; v < stacks; ++v) {
+        for (uint16_t u = 0; u < sectors; ++u) {
+            uint16_t i00 = v * (sectors + 1) + u;
+            uint16_t i10 = i00 + 1;
+            uint16_t i01 = i00 + (sectors + 1);
+            uint16_t i11 = i01 + 1;
+            
+            // pointing out
+            vec3_ib.push_back({i00, i11, i01});
+            vec3_ib.push_back({i00, i10, i11});
+            // pointing in
+            vec3_ib.push_back({i00, i01, i11});
+            vec3_ib.push_back({i00, i11, i10});
+        }
+    }
 
     size_t v_size = vec3_pb.size();
     for (int i = 0; i < v_size; ++i) {
@@ -289,12 +347,9 @@ void ProceduralShapes::gen_z_cylinder(std::vector<float>& vb,
         if (attrib & VertexAttrib::NORM) {
             vb.insert(vb.end(), {vec3_nb[i].x, vec3_nb[i].y, vec3_nb[i].z});
         }
-        // TODO: mock
         if (attrib & VertexAttrib::UV) {
-            // 4x repeated on u, 2x repeated on v
-            vb.insert(vb.end(), {vec2_uv[i].x * 4.0f, vec2_uv[i].y * 2.0f});
+            vb.insert(vb.end(), {vec2_uv[i].x, vec2_uv[i].y});
         }
-        // TODO: mock
         if (attrib & VertexAttrib::TANGENT) {
             vb.insert(vb.end(), {vec3_tb[i].x, vec3_tb[i].y, vec3_tb[i].z});
         }
@@ -310,62 +365,6 @@ void ProceduralShapes::gen_z_cylinder(std::vector<float>& vb,
     } else {
         assert(false);
     }
-}
-
-void ProceduralShapes::gen_z_capsule(std::vector<float>& pb,
-                                     std::vector<uint16_t>& ib,
-                                     float r,
-                                     float height,
-                                     int sectors,
-                                     int stacks,
-                                     IndexType i_type) {
-    PositionBuffer vec3_pb;
-    IndexBuffer vec3_ib;
-    
-    z_cylinder(vec3_pb, vec3_ib, r, 3 * height, sectors, 3 * stacks);
-    
-    float half_height = height / 2;
-    float phi_end = M_PI_2;
-    float phi_start = M_PI_2 / (stacks + 1);
-    // morph bottom
-    morph_cylinder2hemisphere(vec3_pb.begin(),
-                              glm::vec3(0.0, 0.0, -half_height),
-                              r,
-                              sectors,
-                              stacks,
-                              M_PI - phi_start,
-                              M_PI - phi_end);
-    
-    // morph dome
-    morph_cylinder2hemisphere(vec3_pb.begin() + 2 * sectors * stacks,
-                              glm::vec3(0.0, 0.0, half_height),
-                              r,
-                              sectors,
-                              stacks,
-                              phi_end,
-                              phi_start);
-    
-    // center of top and bottom
-    glm::vec3& top = vec3_pb.back();
-    glm::vec3& bottom = *(vec3_pb.end() - 2);
-    top.z = half_height + r;
-    bottom.z = -top.z;
-    
-    // copy to pb, ib
-    pb.resize(vec3_pb.size() * 3);
-    memcpy(pb.data(), vec3_pb.data(), pb.size() * sizeof(float));
-    
-    if (i_type == IndexType::LINE) {
-        tri2line(vec3_ib, ib);
-    } else if (i_type == IndexType::TRIANGLE) {
-        ib.clear();
-        for (auto& i : vec3_ib) {
-            ib.insert(ib.end(), { i.x, i.y, i.z });
-        }
-    } else {
-        assert(false);
-    }
-
 }
 
 void ProceduralShapes::init_icosphere(float r, PositionBuffer& pb, IndexBuffer& ib) {
@@ -498,80 +497,4 @@ void ProceduralShapes::morph_cylinder2hemisphere(PositionBuffer::iterator beg,
             p.z = r * cos(phi) + center.z;
         }
     }
-}
-
-void ProceduralShapes::z_cylinder(PositionBuffer& pb, IndexBuffer& ib, float r, float height, int sectors, int stacks) {
-    float delta_phi = M_PI * 2.0 / sectors;
-    float delta_z = height / stacks;
-    
-    // compute vertex positions
-    float phi = 0.0;
-    float half_height = height / 2;
-    float z = -half_height;
-    for (int sta = 0; sta <= stacks; ++sta, z += delta_z) {
-        r += 0.4f / stacks;
-        for (int sec = 0; sec < sectors; ++sec, phi += delta_phi) {
-            pb.push_back({r * cos(phi), r * sin(phi), z});
-        }
-    }
-    // // center of top and bottom
-    // pb.push_back({0.0, 0.0, -half_height});
-    // pb.push_back({0.0, 0.0, half_height});
-    
-    
-    // set indices
-    // v -- axial index  -- stacks
-    // u -- radial index -- sectors
-    //  p01 -- p11
-    //   |    / |
-    //   |   /  |
-    //   |  /   |
-    //   p00 -- p10
-    for (uint16_t v = 0; v < stacks; ++v) {
-        for (uint16_t u = 1; u <= sectors; ++u) {
-            uint16_t i10 = v * sectors + u;
-            uint16_t i00 = i10 - 1;
-            uint16_t i01 = i00 + sectors;
-            uint16_t i11 = i01 + 1;
-            
-            // loop back
-            if (u == sectors) {
-                i10 -= sectors;
-                i11 -= sectors;
-            }
-            
-            // pointing out
-            ib.push_back({i00, i11, i01});
-            ib.push_back({i00, i10, i11});
-            // pointing in
-            ib.push_back({i00, i01, i11});
-            ib.push_back({i00, i11, i10});
-        }
-    }
-    
-    //        top
-    //       /  |
-    //      /   |
-    //     /    |
-    //   p0 --  p1
-    //     \    |
-    //      \   |
-    //       \  |
-    //      bottom
-    // uint16_t i_top = pb.size() - 1;
-    // uint16_t i_bottom = pb.size() - 2;
-    // for (uint16_t u = 1; u <= sectors; ++u) {
-    //     // bottom
-    //     uint16_t i1 = u;
-    //     uint16_t i0 = u - 1;
-    //     if (u == sectors) {
-    //         i1 -= sectors;
-    //     }
-    //     ib.push_back({i_bottom, i1, i0});
-    //     
-    //     // top
-    //     i1 += stacks * sectors;
-    //     i0 += stacks * sectors;
-    //     ib.push_back({i_top, i0, i1});
-    // }
 }
