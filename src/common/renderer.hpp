@@ -125,27 +125,21 @@ public:
 
     void render_shadowmaps();
 
+    void render_tonemapping();
+
     void blit_shadowmap_atlas(bgfx::ViewId target_view_id);
 
     void reset(uint16_t width, uint16_t height);
 
 private:
-    struct ShadowMap {
-        bgfx::TextureHandle     tex;
-        bgfx::FrameBufferHandle fbo;
-        glm::mat4               proj;
-        glm::mat4               view;
-    };
-
     Camera                                        _camera;
     std::map<size_t, DirectionalLight>            _lights;
     std::map<size_t, Primitive>                   _primitives;
+
     std::map<std::string, bgfx::ProgramHandle>    _shaders;
     std::map<std::string, bgfx::UniformHandle>    _uniforms;
-    std::map<std::string, bgfx::UniformHandle>    _samplers;
-
-    std::map<size_t, ShadowMap>                   _shadowmaps;
-    bgfx::TextureHandle                           _shadowmaps_atlas_tex;
+    std::map<std::string, bgfx::TextureHandle>    _textures;
+    std::map<std::string, bgfx::FrameBufferHandle> _fbos;
 
     IdAllocator                                   _id_alloc;
 };

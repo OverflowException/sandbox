@@ -52,6 +52,10 @@ public:
                            int stacks,
                            IndexType i_type);
 
+    static void gen_z_quad(std::vector<float>& vb,
+                           std::vector<uint16_t>& ib,
+                           glm::vec2 half_dim);
+
     // Cube with hard edge
     // Geometry is so simple that it does not need index buffer
     static void gen_cube(std::vector<float>& vb,

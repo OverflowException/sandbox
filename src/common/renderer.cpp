@@ -1,12 +1,17 @@
+#include <sstream>
+#include <string.h>
+
+#include "glm/gtc/matrix_transform.hpp"
+#include "procedural_shapes.h"
 #include "renderer.hpp"
 #include "file_io.h"
-#include "glm/gtc/matrix_transform.hpp"
 
 const std::string shader_base_path = "shaders/glsl/";
 const std::vector<std::string> shader_names = {
     "pbr",
     "skybox",
-    "shadowmap"
+    "shadowmap",
+    "tonemapping"
 };
 
 const int max_light_count = 4;
@@ -27,6 +32,12 @@ const uint64_t opaque_state = 0
 	| BGFX_STATE_DEPTH_TEST_LESS
 	| BGFX_STATE_CULL_CW;
 
+const bgfx::ViewId tonemapping_id = opaque_id + 1;
+const uint64_t tonemapping_state = 0
+    | BGFX_STATE_WRITE_RGB
+    | BGFX_STATE_WRITE_A
+    | BGFX_STATE_DEPTH_TEST_ALWAYS;
+
 namespace rdr {
 
 Renderer::Renderer() {
@@ -38,13 +49,13 @@ Renderer::Renderer() {
     }
 
     // create shadowmap atlas texture
-    _shadowmaps_atlas_tex = bgfx::createTexture2D(shadow_res * max_light_count,
-                                                  shadow_res,
-                                                  false,
-                                                  1,
-                                                  bgfx::TextureFormat::D32F,
-                                                  BGFX_TEXTURE_BLIT_DST |
-                                                  BGFX_SAMPLER_UVW_CLAMP);
+    _textures["shadowmaps_atlas"] = bgfx::createTexture2D(shadow_res * max_light_count,
+                                                          shadow_res,
+                                                          false,
+                                                          1,
+                                                          bgfx::TextureFormat::D16F,
+                                                          BGFX_TEXTURE_BLIT_DST |
+                                                          BGFX_SAMPLER_UVW_CLAMP);
 }
 
 Renderer::~Renderer() {
@@ -56,16 +67,19 @@ Renderer::~Renderer() {
         bgfx::destroy(ele.second);
     }
 
-    for (auto& ele : _samplers) {
+    for (auto& ele : _textures) {
         bgfx::destroy(ele.second);
     }
 
-    for (auto& ele : _shadowmaps) {
-        bgfx::destroy(ele.second.tex);
-        bgfx::destroy(ele.second.fbo);
+    for (auto& ele : _fbos) {
+        bgfx::destroy(ele.second);
     }
+}
 
-    bgfx::destroy(_shadowmaps_atlas_tex);
+inline std::string make_key(const std::string& prefix, size_t id) {
+    std::ostringstream oss;
+    oss << prefix << id;
+    return oss.str();
 }
 
 void Renderer::render_shadowmaps() {
@@ -74,11 +88,16 @@ void Renderer::render_shadowmaps() {
         // atlas id and light id are 2 different id systems
         bgfx::ViewId view_id = directional_shadow_id + atlas_id;
         size_t light_id = light_iter->first;
-        bgfx::FrameBufferHandle fbo = _shadowmaps[light_id].fbo;
-        glm::mat4& view = _shadowmaps[light_id].view;
-        glm::mat4& proj = _shadowmaps[light_id].proj;
+        DirectionalLight& light = light_iter->second;
+        bgfx::FrameBufferHandle fbo = _fbos[make_key("shadowmap_", light_id)];
 
-        bgfx::setViewTransform(view_id, &view[0][0], &proj[0][0]);
+        float right = shadow_dims.x / 2.0f;
+        float top = shadow_dims.y / 2.0f;
+        float far = shadow_dims.z;
+        glm::mat4 ortho = glm::ortho(-right, right, -top, top, 0.0f, far);
+        glm::mat4 view = glm::lookAt(glm::vec3(0.0) - light.direction * 3.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
+        bgfx::setViewTransform(view_id, &view[0][0], &ortho[0][0]);
         bgfx::setViewClear(view_id, BGFX_CLEAR_DEPTH);
         bgfx::setViewRect(view_id, 0, 0, shadow_res, shadow_res);
         bgfx::setViewFrameBuffer(view_id, fbo);
@@ -99,12 +118,42 @@ void Renderer::blit_shadowmap_atlas(bgfx::ViewId target_view_id) {
     for (auto& ele : _lights) {
         size_t light_id = ele.first;
         bgfx::blit(target_view_id,
-                   _shadowmaps_atlas_tex,
+                   _textures["shadowmaps_atlas"],
                    shadow_res * atlas_id,
                    0,
-                   _shadowmaps[light_id].tex);
+                   bgfx::getTexture(_fbos[make_key("shadowmap_", light_id)], 0));
         ++atlas_id;
     }
+}
+
+void bind_screen_quad() {
+    bgfx::TransientVertexBuffer tvb;
+    bgfx::TransientIndexBuffer tib;
+    bgfx::VertexLayout v_layout;
+    v_layout.begin().add(bgfx::Attrib::Enum::Position, 3, bgfx::AttribType::Enum::Float).end();
+
+    assert(bgfx::getAvailTransientVertexBuffer(4, v_layout));
+    assert(bgfx::getAvailTransientIndexBuffer(6));
+    bgfx::allocTransientVertexBuffer(&tvb, 4, v_layout);
+    bgfx::allocTransientIndexBuffer(&tib, 6);
+
+    std::vector<float> vb;
+    std::vector<uint16_t> ib;
+    ProceduralShapes::gen_z_quad(vb, ib, glm::vec2(1.0f, 1.0f));
+    memcpy(tvb.data, vb.data(), sizeof(float) * 3 * 4);
+    memcpy(tib.data, ib.data(), sizeof(uint16_t) * 6);
+
+    bgfx::setVertexBuffer(0, &tvb, 0, 4);
+    bgfx::setIndexBuffer(&tib, 0, 6);
+}
+
+void Renderer::render_tonemapping() {
+    bind_screen_quad();
+    bgfx::TextureHandle main_color_tex = bgfx::getTexture(_fbos["main"], 0);
+    set_uniform("s_rt", &main_color_tex, bgfx::UniformType::Sampler, 0);
+    bgfx::setViewRect(tonemapping_id, 0, 0, uint16_t(_camera.width), uint16_t(_camera.height));
+    bgfx::setState(tonemapping_state);
+    bgfx::submit(tonemapping_id, _shaders["tonemapping"]);
 }
 
 void Renderer::render() {
@@ -120,7 +169,9 @@ void Renderer::render() {
 
     // set view transform once per view
     bgfx::setViewTransform(opaque_id, &view[0][0], &proj[0][0]);
+    // TODO: camera size is necessarily window size
     bgfx::setViewRect(opaque_id, 0, 0, uint16_t(_camera.width), uint16_t(_camera.height));
+    bgfx::setViewFrameBuffer(opaque_id, _fbos["main"]);
 
     for (auto& ele : _primitives) {
         Primitive& primitive = ele.second;
@@ -134,7 +185,7 @@ void Renderer::render() {
         glm::mat4 model_inv_t = glm::transpose(glm::inverse(primitive.transform));
         set_uniform("u_model_inv_t", &model_inv_t, bgfx::UniformType::Mat4);
 
-        // lighting
+        // lighting and shadows
         uint16_t light_count = _lights.size();
         glm::vec4 vec4_light_count = glm::vec4((float)light_count);
         set_uniform("u_light_count", &vec4_light_count, bgfx::UniformType::Vec4);
@@ -152,12 +203,18 @@ void Renderer::render() {
 
         // shadowmaps
         std::vector<glm::mat4> arr_light_view_proj;
-        for (auto& ele : _shadowmaps) {
-            ShadowMap& sm = ele.second;
-            arr_light_view_proj.push_back(sm.proj * sm.view);
+        for (auto& ele : _lights) {
+            // TODO: this gets computed twice
+            DirectionalLight& light = ele.second;
+            float right = shadow_dims.x / 2.0f;
+            float top = shadow_dims.y / 2.0f;
+            float far = shadow_dims.z;
+            glm::mat4 ortho = glm::ortho(-right, right, -top, top, 0.0f, far);
+            glm::mat4 view = glm::lookAt(glm::vec3(0.0) - light.direction * 3.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            arr_light_view_proj.push_back(ortho * view);
         }
         set_uniform("u_light_space_view_proj", arr_light_view_proj.data(), bgfx::UniformType::Mat4, light_count);
-        set_uniform("s_shadowmaps_atlas", &_shadowmaps_atlas_tex, bgfx::UniformType::Sampler, 0);
+        set_uniform("s_shadowmaps_atlas", &_textures["shadowmaps_atlas"], bgfx::UniformType::Sampler, 0);
 
         // materials
         Renderer::Material& material = primitive.material;
@@ -169,12 +226,34 @@ void Renderer::render() {
         bgfx::setState(opaque_state);
         bgfx::submit(opaque_id, _shaders[material.shader_name]);
     }
+    
+    render_tonemapping();
 }
 
 void Renderer::reset(uint16_t width, uint16_t height) {
-    bgfx::setViewClear(opaque_id, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x0f0f0fff);
+    // reset opaque view
+    bgfx::setViewClear(opaque_id, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, 0x2f2f2fff);
     bgfx::setViewRect(opaque_id, 0, 0, width, height);
-    // bgfx::setViewFrameBuffer(opaque_id, BGFX_INVALID_HANDLE);
+
+    // create or reset main render target
+    if (_fbos.find("main") != _fbos.end()) {
+        bgfx::destroy(_fbos["main"]);
+    }
+    bgfx::TextureHandle main_attachments[2];
+    main_attachments[0] = bgfx::createTexture2D(width, height,
+                                                false,
+                                                1,
+                                                bgfx::TextureFormat::RGBA16F,
+                                                BGFX_TEXTURE_RT |
+                                                BGFX_SAMPLER_UVW_CLAMP);
+    main_attachments[1] = bgfx::createTexture2D(width, height,
+                                                false,
+                                                1,
+                                                bgfx::TextureFormat::D16F,
+                                                BGFX_TEXTURE_RT |
+                                                BGFX_SAMPLER_UVW_CLAMP);
+    _fbos["main"] = bgfx::createFrameBuffer(2, main_attachments, true);
+
 }
 
 void Renderer::set_uniform(const std::string& name,
@@ -294,24 +373,13 @@ size_t Renderer::add_light(DirectionalLight light) {
     size_t id = _id_alloc.allocate();
     _lights[id] = std::move(light);
 
-    bgfx::TextureHandle tex = bgfx::createTexture2D(shadow_res,
-                                                    shadow_res,
-                                                    false,
-                                                    1,
-                                                    bgfx::TextureFormat::D32F,
-                                                    BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP);
-    // bgfx::FrameBufferHandle fbo = bgfx::createFrameBuffer(1, &_shadowmaps_tex[id], false);
-    bgfx::FrameBufferHandle fbo = bgfx::createFrameBuffer(1, &tex, false);
-    float right = shadow_dims.x / 2.0f;
-    float top = shadow_dims.y / 2.0f;
-    float far = shadow_dims.z;
-    glm::mat4 ortho = glm::ortho(-right, right, -top, top, 0.0f, far);
-    glm::mat4 view = glm::lookAt(glm::vec3(0.0) - light.direction * 3.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    _shadowmaps[id] = {
-        .tex = tex,
-        .fbo = fbo,
-        .proj = ortho,
-        .view = view};
+    bgfx::TextureHandle depth_attatchment = bgfx::createTexture2D(shadow_res,
+                                                                  shadow_res,
+                                                                  false,
+                                                                  1,
+                                                                  bgfx::TextureFormat::D16F,
+                                                                  BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP);
+    _fbos[make_key("shadowmap_", id)] = bgfx::createFrameBuffer(1, &depth_attatchment, true);
 
     return id;
 }
@@ -320,9 +388,7 @@ void Renderer::remove_light(size_t id) {
     _lights.erase(id);
     _id_alloc.deallocate(id); 
 
-    bgfx::destroy(_shadowmaps.at(id).tex);
-    bgfx::destroy(_shadowmaps.at(id).fbo);
-    _shadowmaps.erase(id);
+    bgfx::destroy(_fbos[make_key("shadowmap_", id)]);
 }
 
 }

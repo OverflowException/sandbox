@@ -205,6 +205,28 @@ void ProceduralShapes::gen_ico_sphere(std::vector<float>& vb,
     }
 }
 
+void ProceduralShapes::gen_z_quad(std::vector<float>& vb,
+                                  std::vector<uint16_t>& ib,
+                                  glm::vec2 half_dim) {
+    vb = {
+        -half_dim.x, -half_dim.y, 0.0f, // 0
+         half_dim.x, -half_dim.y, 0.0f, // 1
+        -half_dim.x,  half_dim.y, 0.0f, // 2
+         half_dim.x,  half_dim.y, 0.0f  // 3
+    };
+
+    // 2 -- 3
+    // |   /|
+    // |  / |
+    // | /  |
+    // 0 -- 1
+    ib = {
+        0, 1, 3,
+        0, 3, 2
+    };
+}
+
+
 void ProceduralShapes::gen_cube(std::vector<float>& vb,
                                 VertexAttrib attrib,
                                 glm::vec3 half_dim,

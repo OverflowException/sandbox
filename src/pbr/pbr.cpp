@@ -258,11 +258,10 @@ class ToolApp : public app::Application
 	}
 
 	void onReset() {
-		if (renderer) {
-			init_camera.width = getWidth();
-			init_camera.height = getHeight();
-			camera_control->camera() = init_camera;
-			renderer->camera() = init_camera;
+		if (renderer && camera_control) {
+			camera_control->camera().height = getHeight();
+			camera_control->camera().width = getWidth();
+			renderer->camera() = camera_control->camera();
 			renderer->reset(uint16_t(getWidth()), uint16_t(getHeight()));
 		}
 	}
