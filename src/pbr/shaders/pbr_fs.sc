@@ -1,15 +1,24 @@
-$input v_frag_pos  // in view space
-$input v_frag_norm // in view space
+$input v_frag_pos
+$input v_frag_norm
 $input v_texcoord0
-$input v_tangent   // in view space
+$input v_tangent
+
+$input v_frag_pos_light_space_ndc_0
+$input v_frag_pos_light_space_ndc_1
+$input v_frag_pos_light_space_ndc_2
+$input v_frag_pos_light_space_ndc_3
 
 #include <bgfx_shader.sh>
+#include "shadows.sc"
 
-#define MAX_LIGHT_COUNT 8
+#define MAX_LIGHT_COUNT 4
 
-uniform vec4 u_light_count;
-uniform vec4 u_light_dirs[MAX_LIGHT_COUNT];  // in view space
+uniform vec4 u_light_dirs[MAX_LIGHT_COUNT];
 uniform vec4 u_light_colors[MAX_LIGHT_COUNT];
+uniform vec4 u_light_count;
+
+SAMPLER2D(s_shadowmaps_atlas, 0);
+
 uniform vec4 u_view_pos;
 
 uniform vec4 u_albedo;
@@ -24,6 +33,24 @@ vec3 fresnelSchlickRoughness(float cos, vec3 f0, float roughness);
 const float PI = 3.14159265359;
 
 void main() {
+    // compute shadowing factor of each light
+    int light_num = int(min(u_light_count.x, MAX_LIGHT_COUNT));
+    vec3 frag_pos_light_space_ndc[MAX_LIGHT_COUNT];
+    frag_pos_light_space_ndc[0] = v_frag_pos_light_space_ndc_0;
+    frag_pos_light_space_ndc[1] = v_frag_pos_light_space_ndc_1;
+    frag_pos_light_space_ndc[2] = v_frag_pos_light_space_ndc_2;
+    frag_pos_light_space_ndc[3] = v_frag_pos_light_space_ndc_3;
+    
+    float shadow_visibility[MAX_LIGHT_COUNT];
+    for(int i = 0; i < light_num; ++i) {
+        shadow_visibility[i] = shadow_visibility_pcf(s_shadowmaps_atlas,
+                                                     frag_pos_light_space_ndc[i],
+                                                     -normalize(vec3(u_light_dirs[i])),
+                                                     v_frag_norm,
+                                                     i,
+                                                     MAX_LIGHT_COUNT);
+    }
+
     vec3 albedo = vec3(u_albedo);
     float roughness = u_metallic_roughness_ao[1];
     float metallic = u_metallic_roughness_ao[0];
@@ -32,17 +59,16 @@ void main() {
     vec3 v = normalize(vec3(u_view_pos) - v_frag_pos);
     vec3 r = reflect(-v, n);
 
+    // reflectance equation
     vec3 f0 = vec3(0.04);
     f0 = mix(f0, albedo, metallic);
-
-    // reflectance equation
     vec3 lo = vec3(0.0);
-    int light_num = int(min(u_light_count.x, MAX_LIGHT_COUNT));
     for(int i = 0; i < light_num; ++i) {
         // calculate per-light radiance
         vec3 l = -normalize(vec3(u_light_dirs[i]));
         vec3 h = normalize(v + l);
-        vec3 radiance = vec3(u_light_colors[i]);
+        // take shadowing factor into account
+        vec3 radiance = vec3(u_light_colors[i]) * shadow_visibility[i];
         
         // cook-torrance brdf
         float ndf = DistributionGGX(n, h, roughness);
@@ -59,21 +85,21 @@ void main() {
             
         // add to outgoing radiance Lo
         float n_l = max(dot(n, l), 0.0);
-        lo += (kd * albedo / PI + specular) * radiance * n_l; 
+        lo += (kd * albedo / PI + specular) * radiance * n_l;
     }
 
     // ambient lighting (we now use IBL as the ambient term)
-    vec3 f = fresnelSchlickRoughness(max(dot(n, v), 0.0), f0, roughness);
+    // vec3 f = fresnelSchlickRoughness(max(dot(n, v), 0.0), f0, roughness);
     
-    vec3 ks = f;
-    vec3 kd = 1.0 - ks;
-    kd *= 1.0 - metallic;	  
+    // vec3 ks = f;
+    // vec3 kd = 1.0 - ks;
+    // kd *= 1.0 - metallic;	  
 
-    vec3 diffuse      =  albedo;
+    // vec3 diffuse      =  albedo;
 
-    vec3 ambient = kd * diffuse * ao;
+    // vec3 ambient = kd * diffuse * ao;
 
-    // vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = vec3(0.03) * albedo * ao;
     vec3 color = ambient + lo;
 	
     // TODO: do tone mapping in a separate pass
@@ -81,7 +107,6 @@ void main() {
     color = pow(color, vec3(1.0 / 2.2));  
 
     gl_FragColor = vec4(color, 1.0f);
-    // gl_FragColor = vec4(n, 1.0f);
 }
 
 vec3 fresnelSchlick(float cos, vec3 f0) {

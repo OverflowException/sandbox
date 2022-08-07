@@ -98,25 +98,20 @@ public:
     };
     
     // primitive operations
-    size_t add_primitive(Primitive prim) {
-        size_t id = _id_alloc.allocate();
-        _primitives[id] = std::move(prim);
-        return id;
-    };
+    size_t add_primitive(Primitive prim);
 
-    void remove_primitive(size_t id) {
-        _primitives.erase(id);
-        _id_alloc.deallocate(id);
-    };
+    void remove_primitive(size_t id);
 
-    Primitive& primitive(size_t id) { return _primitives.at(id); };
-    const Primitive& primitive(size_t id) const { return _primitives.at(id); };
+    Primitive& primitive(size_t id) { return _primitives.at(id); }
+    const Primitive& primitive(size_t id) const { return _primitives.at(id); }
 
-    // std::vector<Primitive>& primitives() { return _primitives; };
-    // const std::vector<Primitive>& primitives() const { return _primitives; };
+    // light operations
+    size_t add_light(DirectionalLight light);
 
-    std::vector<DirectionalLight>& lights() { return _lights; };
-    const std::vector<DirectionalLight>& lights() const { return _lights; };
+    void remove_light(size_t id);
+
+    DirectionalLight& light(size_t id) { return _lights.at(id); }
+    const DirectionalLight& light(size_t id) const { return _lights.at(id); };
 
     Camera& camera() { return _camera; };
     const Camera& camera() const { return _camera; };
@@ -128,15 +123,30 @@ public:
 
     void render();
 
+    void render_shadowmaps();
+
+    void blit_shadowmap_atlas(bgfx::ViewId target_view_id);
+
     void reset(uint16_t width, uint16_t height);
 
 private:
+    struct ShadowMap {
+        bgfx::TextureHandle     tex;
+        bgfx::FrameBufferHandle fbo;
+        glm::mat4               proj;
+        glm::mat4               view;
+    };
 
     Camera                                        _camera;
-    std::vector<DirectionalLight>                 _lights;
+    std::map<size_t, DirectionalLight>            _lights;
     std::map<size_t, Primitive>                   _primitives;
     std::map<std::string, bgfx::ProgramHandle>    _shaders;
     std::map<std::string, bgfx::UniformHandle>    _uniforms;
+    std::map<std::string, bgfx::UniformHandle>    _samplers;
+
+    std::map<size_t, ShadowMap>                   _shadowmaps;
+    bgfx::TextureHandle                           _shadowmaps_atlas_tex;
+
     IdAllocator                                   _id_alloc;
 };
 

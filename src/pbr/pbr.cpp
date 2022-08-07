@@ -37,9 +37,9 @@ class ToolApp : public app::Application
 		glm::vec3(0.0f, 1.0f, 0.0f),
 	};
 	glm::vec3 light_dirs[light_count] = {	 // in world space
-		{ 1.0f,  1.0f, -1.0f},
-		{ 1.0f, -1.0f,  1.0f},
 		{-1.0f, -1.0f,  1.0f},
+		{ 1.0f, -1.0f,  1.0f},
+		{ 1.0f,  1.0f, -1.0f},
 		{-1.0f,  1.0f, -1.0f},
 	};
 	float light_intensities[light_count] = {
@@ -183,6 +183,8 @@ class ToolApp : public app::Application
 
 	std::shared_ptr<Geometry> target;
 
+	std::shared_ptr<Geometry> doodad;
+
 	std::vector<std::shared_ptr<Geometry>> markers;
 
 	void initialize(int argc, char** argv) {
@@ -201,12 +203,11 @@ class ToolApp : public app::Application
 		renderer->camera() = init_camera;
 
 		// set lighting
-		auto& lights = renderer->lights();
 		for (int i = 0; i < light_count; ++i) {
-			lights.push_back({
+			renderer->add_light({
 				light_dirs[i],
-				light_colors[i],
-				light_intensities[i]});
+			 	light_colors[i],
+			 	light_intensities[i]});
 		}
 
 		// set target primitive
@@ -216,6 +217,15 @@ class ToolApp : public app::Application
 		glm::mat4 target_transform = glm::rotate(glm::mat4(1.0f), float(M_PI_2), glm::vec3(-1.0f, 0.0f, 0.0f));
 		renderer->primitive(target->prim_id).transform = target_transform;
 		ray_caster->update_transform(target->ray_caster_id, target_transform);
+
+		// random doodad
+		doodad.reset(new Geometry(Geometry::Shape::Sphere,
+								  renderer,
+								  ray_caster));
+		glm::mat4 doodad_transform = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 2.0f, -1.0f)) *
+									 glm::scale(glm::mat4(1.0f), glm::vec3(20.0f));
+		renderer->primitive(doodad->prim_id).transform = doodad_transform;
+		ray_caster->update_transform(doodad->ray_caster_id, doodad_transform);
 
 		// set marker primitive
 		markers.resize(target->vb_pos.size() / 3);
@@ -232,7 +242,7 @@ class ToolApp : public app::Application
 				.shader_name = "pbr",
 			});
 
-			glm::vec3 marker_pos = target_transform * glm::vec4(glm::make_vec3(&target->vb_pos[i * 3]), 1.0f);
+			glm::vec3 marker_pos = target_transform * glm::vec4(glm::make_vec3(&target->vb_pos[i * 3]) + glm::make_vec3(&target->vb_normal[i * 3]) * 0.1f, 1.0f);
 			renderer->primitive(marker_ptr->prim_id).set_transform(glm::translate(glm::mat4(1.0f), marker_pos));
 		}
 		// renderer->primitive(target->prim_id).set_transform();
