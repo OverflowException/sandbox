@@ -136,7 +136,7 @@ class ToolApp : public app::Application
 			prim.add_vertex_buffer(desc_tangent);
 			prim.set_index_buffer(desc_idx);
 			rdr::Renderer::Material material = {
-				glm::vec3(0.7f, 0.7f, 0.3f),
+				glm::vec4(0.7f, 0.7f, 0.3f, 1.0f),
 				0.8f,
 				0.3f,
 				1.0f,
@@ -203,11 +203,12 @@ class ToolApp : public app::Application
 		renderer->camera() = init_camera;
 
 		// set lighting
+		std::vector<size_t> light_ids;
 		for (int i = 0; i < light_count; ++i) {
-			renderer->add_light({
+			light_ids.push_back(renderer->add_light({
 				light_dirs[i],
 			 	light_colors[i],
-			 	light_intensities[i]});
+			 	light_intensities[i]}));
 		}
 
 		// set target primitive
@@ -225,6 +226,7 @@ class ToolApp : public app::Application
 		glm::mat4 doodad_transform = glm::translate(glm::mat4(1.0f), glm::vec3(2.0f, 2.0f, -1.0f)) *
 									 glm::scale(glm::mat4(1.0f), glm::vec3(20.0f));
 		renderer->primitive(doodad->prim_id).transform = doodad_transform;
+		renderer->primitive(doodad->prim_id).material.albedo.a = 0.7f;
 		ray_caster->update_transform(doodad->ray_caster_id, doodad_transform);
 
 		// set marker primitive
@@ -235,7 +237,7 @@ class ToolApp : public app::Application
 							 			  ray_caster));
 			std::shared_ptr<Geometry> marker_ptr = markers[i];
 			renderer->primitive(marker_ptr->prim_id).set_material({
-				.albedo = glm::vec3(1.0f, 1.0f, 1.0f),
+				.albedo = glm::vec4(1.0f, 1.0f, 1.0f, 0.3f),
 				.metallic = 0.3f,
 				.roughness = 0.6f,
 				.ao = 1.0f,
@@ -319,7 +321,7 @@ class ToolApp : public app::Application
 
 			auto enveloped = std::move(ray_caster->envelope(cast_result.mesh_id, brush));
 			for (uint16_t id : enveloped) {
-				renderer->primitive(markers[id]->prim_id).material.albedo = glm::vec3(1.0f, 0.0f, 1.0f);
+				renderer->primitive(markers[id]->prim_id).material.albedo = glm::vec4(1.0f, 0.0f, 1.0f, 1.0f);
 			}
 		} else {
 			std::cout << "cast no intersection" << std::endl;

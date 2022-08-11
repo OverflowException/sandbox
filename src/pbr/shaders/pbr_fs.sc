@@ -11,6 +11,7 @@ $input v_frag_pos_light_space_ndc_3
 #include <bgfx_shader.sh>
 #include "shadows.sc"
 #include "material.sc"
+#include "oit.sc"
 
 #define MAX_LIGHT_COUNT 4
 
@@ -63,10 +64,20 @@ void main() {
 
     vec3 ambient = vec3(0.03) * albedo * ao;
     vec3 color = ambient + lo;
-	
-    // TODO: do tone mapping in a separate pass
-    // color = color / (color + vec3(1.0));
-    // color = pow(color, vec3(1.0 / 2.2));  
 
-    gl_FragColor = vec4(color, 1.0f);
+    if (u_albedo.a < 1.0f) {
+        // translucent primitive fragment
+        float depth = -depth_eye_space(gl_FragCoord, u_invProj);
+        float alpha = u_albedo.a;
+        float weight = distance_weight(vec4(color, alpha), depth, 2);
+
+        // accumu
+        gl_FragData[0] = vec4(color * alpha, alpha) * weight;
+        // gl_FragData[0] = vec4(depth, weight, 0.0f, 0.0f);
+        // revealage
+        gl_FragData[1] = vec4(alpha);
+    } else {
+        // opaque primitive
+        gl_FragData[0] = vec4(color, 1.0f);
+    }
 }

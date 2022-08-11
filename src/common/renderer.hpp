@@ -20,7 +20,7 @@ public:
     ~Renderer();
 
     struct Material {
-        glm::vec3       albedo      = glm::vec3(1.0f);
+        glm::vec4       albedo      = glm::vec4(1.0f);
         float           metallic    = 0.1f;
         float           roughness   = 0.1f;
         float           ao          = 0.1f;
@@ -89,12 +89,20 @@ public:
         float fovy;
         float near;
         float far;
+
+        // will get recomputed by renderer every render
+        glm::mat4 proj = glm::mat4(1.0f);
+        glm::mat4 view = glm::mat4(1.0f);
     };
 
     struct DirectionalLight {
         glm::vec3 direction;
         glm::vec3 color;
         float     intensity;
+
+        // will get recomputed by renderer every render
+        glm::mat4 ortho = glm::mat4(1.0f);
+        glm::mat4 view = glm::mat4(1.0f);
     };
     
     // primitive operations
@@ -110,24 +118,39 @@ public:
 
     void remove_light(size_t id);
 
-    DirectionalLight& light(size_t id) { return _lights.at(id); }
+    DirectionalLight& light(size_t id) { return _lights.at(id); };
     const DirectionalLight& light(size_t id) const { return _lights.at(id); };
 
     Camera& camera() { return _camera; };
     const Camera& camera() const { return _camera; };
 
     void set_uniform(const std::string& name,
-                     void* value,
+                     const void* value,
                      bgfx::UniformType::Enum type,
                      uint16_t num = (uint16_t)1);
+
+    void recompute_camera();
+
+    void recompute_lights();
 
     void render();
 
     void render_shadowmaps();
 
+    void blit_shadowmap_atlas(bgfx::ViewId target_view_id);
+
+    void render_opaque();
+
+    bool render_translucent();
+
+    void composite_opaque_translucent();
+
     void render_tonemapping();
 
-    void blit_shadowmap_atlas(bgfx::ViewId target_view_id);
+    void submit_lighting(const Primitive& prim,
+                         bgfx::ViewId view_id,
+                         uint64_t state,
+                         uint32_t factor = 0);
 
     void reset(uint16_t width, uint16_t height);
 
