@@ -147,6 +147,8 @@ void Renderer::render_opaque() {
     bgfx::setViewTransform(opaque_id, &_camera.view[0][0], &_camera.proj[0][0]);
     bgfx::setViewFrameBuffer(opaque_id, _fbos["main"]);
 
+    // touch in case there is no opaque primitives
+    bgfx::touch(opaque_id);
     for (auto& ele : _primitives) {
         Primitive& primitive = ele.second;
         if (primitive.material.albedo.a >= 1.0f) {
@@ -269,7 +271,6 @@ void Renderer::submit_lighting(const Primitive& prim,
     // shadowmaps
     std::vector<glm::mat4> arr_light_view_proj;
     for (auto& ele : _lights) {
-        // TODO: this gets computed multiple times
         DirectionalLight& light = ele.second;
         arr_light_view_proj.push_back(light.ortho * light.view);
     }
