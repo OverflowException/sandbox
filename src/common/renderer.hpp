@@ -4,12 +4,14 @@
 #include <map>
 #include <vector>
 #include <list>
+#include <limits>
 #include <string>
 #include <glm/vec3.hpp>
 #include <glm/matrix.hpp>
 
 #include "bgfx/bgfx.h"
 #include "id_allocator.hpp"
+#include "geometry_utils.hpp"
 
 namespace rdr {
 
@@ -77,6 +79,13 @@ public:
 
         glm::mat4                               transform;
         Material                                material;
+        GeometryUtil::AABB                      aabb;
+    };
+
+    struct ViewFrustumCtx {
+        GeometryUtil::Frustum               view_world;         // entirety of view frustum, world space
+        std::vector<GeometryUtil::Sphere>   slices_bs_world;    // slices' bounding sphere, world space
+        std::vector<GeometryUtil::Frustum>  slices_ndc_z;       // frustum slices in ndc, only z values
     };
 
     struct Camera {
@@ -93,6 +102,9 @@ public:
         // will get recomputed by renderer every render
         glm::mat4 proj = glm::mat4(1.0f);
         glm::mat4 view = glm::mat4(1.0f);
+        glm::mat4 inv_proj = glm::mat4(1.0f);
+        glm::mat4 inv_view = glm::mat4(1.0f);
+        ViewFrustumCtx frust; // in world space
     };
 
     struct DirectionalLight {
@@ -101,8 +113,8 @@ public:
         float     intensity;
 
         // will get recomputed by renderer every render
-        glm::mat4 ortho = glm::mat4(1.0f);
-        glm::mat4 view = glm::mat4(1.0f);
+        glm::mat4               view = glm::mat4(1.0f);
+        std::vector<glm::mat4>  orthos;
     };
     
     // primitive operations
@@ -152,12 +164,19 @@ public:
                          uint64_t state,
                          uint32_t factor = 0);
 
+    void compute_view_frust_slices(int n);
+
+    void compute_cascaded_light_properties(size_t light_id);
+
+    void compute_scene_aabb();
+
     void reset(uint16_t width, uint16_t height);
 
 private:
     Camera                                        _camera;
     std::map<size_t, DirectionalLight>            _lights;
     std::map<size_t, Primitive>                   _primitives;
+    GeometryUtil::AABB                            _scene_aabb;
 
     std::map<std::string, bgfx::ProgramHandle>    _shaders;
     std::map<std::string, bgfx::UniformHandle>    _uniforms;

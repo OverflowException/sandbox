@@ -2,6 +2,8 @@
 #include <string.h>
 
 #include "glm/gtc/matrix_transform.hpp"
+#define GLM_ENABLE_EXPERIMENTAL
+#include "glm/gtx/transform.hpp"
 #include "procedural_shapes.h"
 #include "renderer.hpp"
 #include "file_io.h"
@@ -16,8 +18,10 @@ const std::vector<std::string> shader_names = {
 };
 
 const int max_light_count = 4;
-const uint16_t shadow_res = 1024;
+const uint16_t shadow_res = 2048;    // corresponding parameter in shader
 const glm::vec3 shadow_dims(10.0f, 10.0f, 15.0f); // width, height, depth of shadow ortho projection
+const int cascade_num = 3;
+const float cascade_correction = 0.85;
 
 // 1 shadow pass for each light
 const bgfx::ViewId directional_shadow_id = 0;
@@ -27,7 +31,7 @@ const uint64_t shadow_state = 0
 	| BGFX_STATE_CULL_CCW;
 
 // opaque primitive pass
-const bgfx::ViewId opaque_id = directional_shadow_id + max_light_count;
+const bgfx::ViewId opaque_id = directional_shadow_id + max_light_count * cascade_num;
 const uint64_t opaque_state = 0
     | BGFX_STATE_WRITE_RGB
 	| BGFX_STATE_WRITE_A
@@ -72,7 +76,7 @@ Renderer::Renderer() {
 
     // create shadowmap atlas texture
     _textures["shadowmaps_atlas"] = bgfx::createTexture2D(shadow_res * max_light_count,
-                                                          shadow_res,
+                                                          shadow_res * cascade_num,
                                                           false,
                                                           1,
                                                           bgfx::TextureFormat::D16F,
@@ -98,9 +102,9 @@ Renderer::~Renderer() {
     }
 }
 
-inline std::string make_key(const std::string& prefix, size_t id) {
+inline std::string make_key(const std::string& prefix, size_t id0, size_t id1) {
     std::ostringstream oss;
-    oss << prefix << id;
+    oss << prefix << id0 << "_" << id1;
     return oss.str();
 }
 
@@ -108,23 +112,25 @@ void Renderer::render_shadowmaps() {
     uint16_t atlas_id = 0;
     for (auto light_iter = _lights.begin(); light_iter != _lights.end(); ++light_iter, ++atlas_id) {
         // atlas id and light id are 2 different id systems
-        bgfx::ViewId view_id = directional_shadow_id + atlas_id;
         size_t light_id = light_iter->first;
         DirectionalLight& light = light_iter->second;
-        bgfx::FrameBufferHandle fbo = _fbos[make_key("shadowmap_", light_id)];
 
-        bgfx::setViewTransform(view_id, &light.view[0][0], &light.ortho[0][0]);
-        bgfx::setViewClear(view_id, BGFX_CLEAR_DEPTH);
-        bgfx::setViewRect(view_id, 0, 0, shadow_res, shadow_res);
-        bgfx::setViewFrameBuffer(view_id, fbo);
-        for (auto& ele : _primitives) {
-            Primitive& primitive = ele.second;
-            // submit position buffer only
-            primitive.vbs[0]->bind((uint8_t)0);
-            primitive.ib->bind();
-            bgfx::setTransform(&primitive.transform[0][0]);
-            bgfx::setState(shadow_state);
-            bgfx::submit(view_id, _shaders["shadowmap"]);
+        for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+            bgfx::ViewId view_id = directional_shadow_id + atlas_id * cascade_num + cascade_id;
+            bgfx::FrameBufferHandle fbo = _fbos[make_key("shadowmap_", light_id, cascade_id)];
+            bgfx::setViewTransform(view_id, &light.view[0][0], &light.orthos[cascade_id][0][0]);
+            bgfx::setViewClear(view_id, BGFX_CLEAR_DEPTH);
+            bgfx::setViewRect(view_id, 0, 0, shadow_res, shadow_res);
+            bgfx::setViewFrameBuffer(view_id, fbo);
+            for (auto& ele : _primitives) {
+                Primitive& primitive = ele.second;
+                // submit position buffer only
+                primitive.vbs[0]->bind((uint8_t)0);
+                primitive.ib->bind();
+                bgfx::setTransform(&primitive.transform[0][0]);
+                bgfx::setState(shadow_state);
+                bgfx::submit(view_id, _shaders["shadowmap"]);
+            }
         }
     }
 }
@@ -133,11 +139,13 @@ void Renderer::blit_shadowmap_atlas(bgfx::ViewId target_view_id) {
     int atlas_id = 0;
     for (auto& ele : _lights) {
         size_t light_id = ele.first;
-        bgfx::blit(target_view_id,
-                   _textures["shadowmaps_atlas"],
-                   shadow_res * atlas_id,
-                   0,
-                   bgfx::getTexture(_fbos[make_key("shadowmap_", light_id)], 0));
+        for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+            bgfx::blit(target_view_id,
+                       _textures["shadowmaps_atlas"],
+                       shadow_res * atlas_id,
+                       shadow_res * cascade_id,
+                       bgfx::getTexture(_fbos[make_key("shadowmap_", light_id, cascade_id)], 0));
+        }
         ++atlas_id;
     }
 }
@@ -268,13 +276,21 @@ void Renderer::submit_lighting(const Primitive& prim,
     glm::vec4 vec4_view_pos = glm::vec4(_camera.eye, 1.0f);
     set_uniform("u_view_pos", &vec4_view_pos, bgfx::UniformType::Vec4);
 
-    // shadowmaps
+    // cascaded shadowmaps
     std::vector<glm::mat4> arr_light_view_proj;
-    for (auto& ele : _lights) {
-        DirectionalLight& light = ele.second;
-        arr_light_view_proj.push_back(light.ortho * light.view);
+    for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+        for (auto& ele : _lights) {
+            DirectionalLight& light = ele.second;
+            arr_light_view_proj.push_back(light.orthos[cascade_id] * light.view);
+        }
     }
-    set_uniform("u_light_space_view_proj", arr_light_view_proj.data(), bgfx::UniformType::Mat4, light_count);
+    glm::vec4 cascade_thresholds(1.0f);
+    for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+        assert(cascade_id <= 3);
+        cascade_thresholds[cascade_id] = _camera.frust.slices_ndc_z[cascade_id].near.z;
+    }
+    set_uniform("u_cascade_thresholds_ndc", &cascade_thresholds, bgfx::UniformType::Vec4);
+    set_uniform("u_light_space_view_proj", arr_light_view_proj.data(), bgfx::UniformType::Mat4, light_count * cascade_num);
     set_uniform("s_shadowmaps_atlas", &_textures["shadowmaps_atlas"], bgfx::UniformType::Sampler, 0);
 
     // materials
@@ -411,6 +427,17 @@ void Renderer::Primitive::VertexBufferHandle::bind(uint8_t stream) {
 
 std::shared_ptr<Renderer::Primitive::VertexBufferHandle>
 Renderer::Primitive::add_vertex_buffer(VertexDesc desc) {
+    if (desc.attrib == bgfx::Attrib::Enum::Position) {
+        // construct aabb based on position
+        assert(desc.type == bgfx::AttribType::Float && desc.num == 3);
+        const glm::vec3* start = (const glm::vec3*)desc.data;
+        const glm::vec3* end = (const glm::vec3*)((const char*)desc.data + desc.size);
+        
+        for (const glm::vec3* ptr = start; ptr < end; ++ptr) {
+            aabb.add(*ptr);
+        }
+    }
+
     bgfx::VertexLayout layout;
     layout.begin().add(desc.attrib, desc.num, desc.type).end();
 
@@ -463,13 +490,15 @@ size_t Renderer::add_light(DirectionalLight light) {
     size_t id = _id_alloc.allocate();
     _lights[id] = std::move(light);
 
-    bgfx::TextureHandle depth_attatchment = bgfx::createTexture2D(shadow_res,
-                                                                  shadow_res,
-                                                                  false,
-                                                                  1,
-                                                                  bgfx::TextureFormat::D16F,
-                                                                  BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP);
-    _fbos[make_key("shadowmap_", id)] = bgfx::createFrameBuffer(1, &depth_attatchment, true);
+    for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+        bgfx::TextureHandle depth_attatchment = bgfx::createTexture2D(shadow_res,
+                                                                      shadow_res,
+                                                                      false,
+                                                                      1,
+                                                                      bgfx::TextureFormat::D16F,
+                                                                      BGFX_TEXTURE_RT | BGFX_SAMPLER_UVW_CLAMP);
+        _fbos[make_key("shadowmap_", id, cascade_id)] = bgfx::createFrameBuffer(1, &depth_attatchment, true);   
+    }
 
     return id;
 }
@@ -478,25 +507,148 @@ void Renderer::remove_light(size_t id) {
     _lights.erase(id);
     _id_alloc.deallocate(id); 
 
-    std::string key = make_key("shadowmap_", id);
-    bgfx::destroy(_fbos[key]);
-    _fbos.erase(key);
+    for (int cascade_id = 0; cascade_id < cascade_num; ++cascade_id) {
+        std::string key = make_key("shadowmap_", id, cascade_id);
+        bgfx::destroy(_fbos[key]);
+        _fbos.erase(key);
+    }
 }
 
 void Renderer::recompute_camera() {
     _camera.proj = glm::perspective(_camera.fovy, _camera.width / _camera.height, _camera.near, _camera.far);
 	_camera.view = glm::lookAt(_camera.eye, _camera.eye + _camera.front, _camera.up);
+    _camera.inv_proj = glm::inverse(_camera.proj);
+    _camera.inv_view = glm::inverse(_camera.view);
+    compute_view_frust_slices(cascade_num);
 }
 
 void Renderer::recompute_lights() {
+    compute_scene_aabb();
     for (auto& ele : _lights) {
-        DirectionalLight& light = ele.second;
-        float right = shadow_dims.x / 2.0f;
-        float top = shadow_dims.y / 2.0f;
-        float far = shadow_dims.z;
-        light.ortho = glm::ortho(-right, right, -top, top, 0.0f, far);
-        light.view = glm::lookAt(glm::vec3(0.0) - light.direction * 3.0f, glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-    }   
+        size_t light_id = ele.first;
+        compute_cascaded_light_properties(light_id);
+    }
+}
+
+void Renderer::compute_scene_aabb() {
+    for (auto& ele : _primitives) {
+        const Primitive& prim = ele.second;
+        _scene_aabb.merge(prim.aabb.transformed_bound(prim.transform));
+    }
+}
+
+void Renderer::compute_cascaded_light_properties(size_t id) {
+    glm::vec3 dir = _lights[id].direction;
+    glm::mat4& light_view = _lights[id].view;
+    std::vector<glm::mat4>& orthos = _lights[id].orthos;
+
+    light_view = glm::lookAt(glm::vec3(0.0),
+                             glm::vec3(0.0f) + dir,
+                             glm::vec3(0.0f, 1.0f, 0.0f)); // TODO: what if light shines straight up
+
+    // determine near and far plane of orthogonal transform, so that
+    // 1. the entire view frustum is in sight
+    // 2. the entire scene is in sight
+    float min_proj = std::numeric_limits<float>::max();
+    float max_proj = std::numeric_limits<float>::min();
+    // view frustum
+    std::vector<glm::vec3> view_corners = std::move(_camera.frust.view_world.corners());
+    for (auto& c : view_corners) {
+        float proj = glm::dot(dir, c);
+        min_proj = glm::min(min_proj, proj);
+        max_proj = glm::max(max_proj, proj);
+    }
+    // scene
+    std::vector<glm::vec3> scene_corners = std::move(_scene_aabb.corners());
+    for (auto& c : scene_corners) {
+        float proj = glm::dot(dir, c);
+        min_proj = glm::min(min_proj, proj);
+        max_proj = glm::max(max_proj, proj);
+    }
+    min_proj /= glm::length(dir);
+    max_proj /= glm::length(dir);
+    
+    // determin left/right/up/bottom boundaries of orthogonal transform, so that
+    // view frustum bounding sphere is bound inside a light space cubic aabb
+    orthos.clear();
+    for (auto bs : _camera.frust.slices_bs_world) {
+        //GeometryUtil::Sphere slice_
+        bs.center = glm::vec3(light_view * glm::vec4(bs.center, 1.0f));
+        
+        // texel snapping on xy
+        float length_per_texel = bs.radius / (shadow_res * 0.5f);
+        glm::mat2 snap(1.0f / length_per_texel);
+        glm::mat2 inv_snap(length_per_texel);
+        glm::vec2 center_xy = inv_snap * glm::floor(snap * glm::vec2(bs.center));
+        bs.center = glm::vec3(center_xy.x, center_xy.y, bs.center.z);
+
+        orthos.push_back(glm::ortho(bs.center.x - bs.radius,  bs.center.x + bs.radius,
+                                    bs.center.y - bs.radius,  bs.center.y + bs.radius,
+                                    min_proj,                 max_proj));
+    }
+
+}
+
+void Renderer::compute_view_frust_slices(int num) {
+    // view frustum in world space
+    // near - top - right
+    glm::vec4 ntr = _camera.inv_proj * glm::vec4(1.0f, 1.0f, -1.0f, 1.0f);
+    ntr /= glm::vec4(ntr.w);
+    _camera.frust.view_world.near = glm::vec3(ntr.x, ntr.y, ntr.z);
+    // far - top - right
+    glm::vec4 ftr = _camera.inv_proj * glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    ftr /= glm::vec4(ftr.w);
+    _camera.frust.view_world.far = glm::vec3(ftr.x, ftr.y, ftr.z);
+    _camera.frust.view_world.trans = _camera.inv_view;
+
+    // slices
+    std::vector<float> split_z;
+    float n = -_camera.near;
+    float f = -_camera.far;
+    split_z.push_back(n);
+    for (int i = 1; i < num; ++i) {
+        // TODO: see Nvidia cascaded shadow maps for details
+        float lambda = 0.85f;
+        split_z.push_back(lambda * n * glm::pow(f / n, float(i) / float(num)) + 
+                         (1 - lambda) * (n + (float(i) / float(num)) * (f - n)));
+    }
+    split_z.push_back(f);
+
+    // set slices' bounding sphere in world space
+    glm::vec3 frust_near = _camera.frust.view_world.near;
+    glm::vec3 frust_far = _camera.frust.view_world.far;
+    std::vector<glm::vec3> slices_view;
+    for (float z : split_z) {
+        glm::vec3 slice = frust_near +
+                          (frust_far - frust_near) *
+                          (z - n) / (f - n);
+        slices_view.push_back(slice);
+    }
+    _camera.frust.slices_bs_world.clear();
+    for (size_t i = 0; i < num; ++i) {
+        GeometryUtil::Frustum slice_frust = {slices_view[i], slices_view[i + 1]};
+        std::vector<glm::vec3> slice_corners = std::move(slice_frust.corners());
+        GeometryUtil::AABB aabb;
+        for (auto& c : slice_corners) {
+            aabb.add(glm::vec3(glm::vec4(c, 1.0f)));
+        }
+        GeometryUtil::Sphere bs = std::move(aabb.bounding_sphere());
+        bs.center = glm::vec3(_camera.inv_view * glm::vec4(bs.center, 1.0f));
+        _camera.frust.slices_bs_world.push_back(bs);
+    }
+
+    // set slices in ndc
+    std::vector<glm::vec3> slices_ndc;
+    for (glm::vec3 slice : slices_view) {
+        // only z matters
+        glm::vec4 slice_ndc = _camera.proj * glm::vec4(0.0f, 0.0f, slice.z, 1.0f);
+        slice_ndc /= slice_ndc.w;
+        slices_ndc.push_back(glm::vec3(slice_ndc));
+    }
+    _camera.frust.slices_ndc_z.clear();
+    for (size_t i = 0; i < num; ++i) {
+        _camera.frust.slices_ndc_z.push_back({slices_ndc[i], slices_ndc[i + 1]});
+    }
 }
 
 }

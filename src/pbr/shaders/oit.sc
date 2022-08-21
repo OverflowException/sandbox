@@ -3,7 +3,8 @@
     the result of (u_modelViewProj * a_position) is called clip space coordinate
     what opengl rasterizer does behind the scene is converting clip space coordinate to window space coordinate i.e. gl_FragCoord
         1. gl_FragCoord.w = 1.0f / clip.w
-        2. gl_FragCoord.z = clip.z / clip.w * 0.5f + 0.5f
+        2. z_ndc = clip.z / clip.w                  do perspective division, get ndc
+        2. gl_FragCoord.z = z_ndc * 0.5f + 0.5f
 */
 float depth_eye_space(vec4 wnd_coord, mat4 inv_proj) {
     float wnd_z = wnd_coord.z;
